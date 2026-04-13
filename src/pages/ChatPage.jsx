@@ -22,6 +22,15 @@ function detectLanguage() {
   return getSupportedLanguage(navigator.language);
 }
 
+const SUGGESTIONS = [
+  { text: 'How do I export my project?', icon: '↗', color: 'var(--section-distribution)' },
+  { text: 'Where is the trim tool?', icon: '✂', color: 'var(--section-editing)' },
+  { text: 'What keyboard shortcuts are available?', icon: '⌨', color: 'var(--section-writers)' },
+  { text: 'How do I add captions?', icon: '☰', color: 'var(--section-home)' },
+  { text: 'How do I manage my projects?', icon: '◈', color: 'var(--section-library)' },
+  { text: 'What file formats are supported?', icon: '◎', color: 'var(--section-finance)' },
+];
+
 export default function ChatPage() {
   const [messages, setMessages] = useState([]);
   const [streaming, setStreaming] = useState(false);
@@ -39,7 +48,6 @@ export default function ChatPage() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamText]);
 
-  // Load session history and versions on mount
   useEffect(() => {
     async function init() {
       try {
@@ -164,62 +172,94 @@ export default function ChatPage() {
   const showOnboarding = loaded && messages.length === 0;
 
   return (
-    <div className="chat-container">
-      <div className="chat-header">
-        <h1>Prism Support</h1>
-        <div className="selectors-row">
-          <VersionSelector versions={versions} value={version} onChange={setVersion} />
-          <LanguageSelector value={language} onChange={setLanguage} />
-        </div>
-        <button className="btn btn-sm btn-ghost" onClick={handleNewSession} title="New conversation">
-          New chat
-        </button>
-      </div>
-
-      <div className="chat-messages">
-        {showOnboarding && (
-          <div className="onboarding">
-            <h2>Welcome to Prism Support</h2>
-            <p>I can answer questions about the video editor. What are you trying to do today?</p>
-            <div className="onboarding-suggestions">
-              <button className="onboarding-suggestion" onClick={() => sendMessage('How do I export my project?')}>
-                How do I export my project?
-              </button>
-              <button className="onboarding-suggestion" onClick={() => sendMessage('Where is the trim tool?')}>
-                Where is the trim tool?
-              </button>
-              <button className="onboarding-suggestion" onClick={() => sendMessage('What keyboard shortcuts are available?')}>
-                What keyboard shortcuts are available?
-              </button>
-            </div>
+    <div className="chat-page">
+      <header className="chat-topbar">
+        <div className="chat-topbar-inner">
+          <div className="chat-brand">
+            <span className="chat-brand-icon">◈</span>
+            <span className="chat-brand-text">Prism Support</span>
           </div>
-        )}
+          <div className="chat-topbar-controls">
+            <VersionSelector versions={versions} value={version} onChange={setVersion} />
+            <LanguageSelector value={language} onChange={setLanguage} />
+            <button className="chat-new-btn" onClick={handleNewSession} title="New conversation">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              <span>New chat</span>
+            </button>
+          </div>
+        </div>
+      </header>
 
-        {messages.map((msg, i) => (
-          <ChatMessage
-            key={i}
-            msg={msg}
-            onEscalate={msg.role === 'assistant' ? handleEscalate : null}
-          />
-        ))}
-
-        {streaming && (
-          <>
-            {streamText ? (
-              <div className="msg msg-assistant">{streamText}</div>
-            ) : (
-              <div className="msg-thinking">
-                <div className="spinner" /> Thinking…
+      <div className="chat-body">
+        <div className="chat-scroll">
+          {showOnboarding && (
+            <div className="chat-onboarding">
+              <div className="chat-hero">
+                <div className="chat-hero-badge">Support Assistant</div>
+                <h1 className="chat-hero-title">
+                  How can we help<br />you today?
+                </h1>
+                <p className="chat-hero-subtitle">
+                  Ask anything about the video editor — from basic features to advanced workflows.
+                </p>
               </div>
-            )}
-          </>
-        )}
 
-        {!streaming && followUps.length > 0 && (
-          <FollowUps questions={followUps} onSelect={sendMessage} />
-        )}
+              <div className="chat-suggestions">
+                {SUGGESTIONS.map((s, i) => (
+                  <button
+                    key={i}
+                    className="chat-suggestion-card"
+                    onClick={() => sendMessage(s.text)}
+                  >
+                    <span className="chat-suggestion-icon" style={{ background: s.color }}>
+                      {s.icon}
+                    </span>
+                    <span className="chat-suggestion-text">{s.text}</span>
+                    <span className="chat-suggestion-arrow">→</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
-        <div ref={chatEndRef} />
+          {messages.map((msg, i) => (
+            <ChatMessage
+              key={i}
+              msg={msg}
+              onEscalate={msg.role === 'assistant' ? handleEscalate : null}
+            />
+          ))}
+
+          {streaming && (
+            <>
+              {streamText ? (
+                <div className="chat-msg chat-msg-assistant">
+                  <div className="chat-msg-avatar chat-msg-avatar-ai">◈</div>
+                  <div className="chat-msg-bubble chat-msg-bubble-ai">{streamText}</div>
+                </div>
+              ) : (
+                <div className="chat-msg chat-msg-assistant">
+                  <div className="chat-msg-avatar chat-msg-avatar-ai">◈</div>
+                  <div className="chat-msg-thinking">
+                    <div className="chat-thinking-dots">
+                      <span /><span /><span />
+                    </div>
+                    Thinking…
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {!streaming && followUps.length > 0 && (
+            <FollowUps questions={followUps} onSelect={sendMessage} />
+          )}
+
+          <div ref={chatEndRef} />
+        </div>
       </div>
 
       <ChatInput onSend={sendMessage} disabled={streaming || escalating} />
