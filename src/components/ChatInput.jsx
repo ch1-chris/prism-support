@@ -35,9 +35,6 @@ export default function ChatInput({ onSend, disabled }) {
           </svg>
         </button>
       </form>
-      <p className="chat-input-hint">
-        Prism Support can make mistakes. Verify important information.
-      </p>
     </div>
   );
 }

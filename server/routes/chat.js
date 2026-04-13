@@ -32,7 +32,7 @@ function buildSystemPrompt(kbEntries, language) {
 RULES:
 - Answer ONLY from the knowledge base below. Do not invent features or instructions.
 - Be specific about button locations, menu paths, and keyboard shortcuts.
-- If the answer is NOT in the knowledge base, say explicitly: "I don't have information about that in my current knowledge base. You may want to check the latest documentation or contact our support team."
+- If the answer is NOT in the knowledge base, say exactly: "We're still adding info about that feature to Prism Support chat's knowledge base — please contact your Prism rep for assistance with this question."
 - When you're uncertain, say so clearly rather than guessing.
 - Keep answers concise and practical.
 - When a knowledge base entry includes a Screenshot URL and the visual would help the user locate a button, menu, or UI element, embed it using markdown image syntax: ![description](url). Only include images when they add clarity — do not include them for every answer.
