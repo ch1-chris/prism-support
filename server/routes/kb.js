@@ -334,7 +334,7 @@ async function processTextFile(file, version) {
 }
 
 // --- Process tutorial video (SSE) ---
-const MAX_STORAGE_UPLOAD_BYTES = 50 * 1024 * 1024;
+const MAX_STORAGE_UPLOAD_BYTES = 1024 * 1024 * 1024;
 
 router.post('/process-video', videoUpload.single('file'), asyncHandler(async (req, res) => {
   ensureTmpDir();
