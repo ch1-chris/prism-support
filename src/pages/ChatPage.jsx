@@ -132,6 +132,7 @@ export default function ChatPage() {
       let msgFollowUps = [];
       let analyticsId = null;
       let lineBuffer = '';
+      const stripFollowups = (t) => t.replace(/<!--followups:\[.*?\]-->/s, '').trim();
 
       while (true) {
         const { done, value } = await reader.read();
@@ -150,14 +151,14 @@ export default function ChatPage() {
             const event = JSON.parse(jsonStr);
             if (event.type === 'text') {
               fullText += event.content;
-              setStreamText(fullText);
+              setStreamText(stripFollowups(fullText));
             } else if (event.type === 'followups') {
               msgFollowUps = event.content || [];
             } else if (event.type === 'done') {
               analyticsId = event.analyticsId;
             } else if (event.type === 'error') {
               fullText += `\n\nError: ${event.content}`;
-              setStreamText(fullText);
+              setStreamText(stripFollowups(fullText));
             }
           } catch { /* skip malformed events */ }
         }
@@ -168,21 +169,22 @@ export default function ChatPage() {
           const event = JSON.parse(lineBuffer.slice(6));
           if (event.type === 'text') {
             fullText += event.content;
-            setStreamText(fullText);
+            setStreamText(stripFollowups(fullText));
           } else if (event.type === 'followups') {
             msgFollowUps = event.content || [];
           } else if (event.type === 'done') {
             analyticsId = event.analyticsId;
           } else if (event.type === 'error') {
             fullText += `\n\nError: ${event.content}`;
-            setStreamText(fullText);
+            setStreamText(stripFollowups(fullText));
           }
         } catch { /* skip malformed trailing data */ }
       }
 
+      const cleanedText = stripFollowups(fullText);
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: fullText, follow_ups: msgFollowUps, analyticsId },
+        { role: 'assistant', content: cleanedText, follow_ups: msgFollowUps, analyticsId },
       ]);
       setFollowUps(msgFollowUps);
     } catch (err) {
