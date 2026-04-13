@@ -69,6 +69,11 @@ export const kb = {
   checkStaleness: () =>
     request('/api/kb/check-staleness', { method: 'POST' }),
 
+  audit: () => fetch('/api/kb/audit', {
+    method: 'POST',
+    credentials: 'include',
+  }),
+
   getVersions: () => request('/api/kb/meta/versions'),
 };
 

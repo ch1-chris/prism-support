@@ -38,6 +38,9 @@ export default function AdminPage() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkResult, setBulkResult] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [auditRunning, setAuditRunning] = useState(false);
+  const [auditProgress, setAuditProgress] = useState('');
+  const [auditResult, setAuditResult] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -93,6 +96,47 @@ export default function AdminPage() {
   function handleEntryDelete(id) {
     setEntries((prev) => prev.filter((e) => e.id !== id));
     setEntryCount((c) => c - 1);
+  }
+
+  async function runAudit() {
+    setAuditRunning(true);
+    setAuditProgress('Starting audit...');
+    setAuditResult(null);
+    try {
+      const response = await kb.audit();
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || `Request failed (${response.status})`);
+      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const event = JSON.parse(line.slice(6));
+          if (event.type === 'progress') setAuditProgress(event.message);
+          if (event.type === 'done') {
+            setAuditResult(event);
+            setAuditProgress('');
+          }
+        }
+      }
+      if (buffer.startsWith('data: ')) {
+        const event = JSON.parse(buffer.slice(6));
+        if (event.type === 'done') setAuditResult(event);
+      }
+      loadEntries();
+    } catch (err) {
+      setAuditResult({ error: err.message });
+    } finally {
+      setAuditRunning(false);
+    }
   }
 
   async function handleBulkImport() {
@@ -240,7 +284,58 @@ export default function AdminPage() {
                   Stale only
                 </button>
                 <button className="btn btn-sm" onClick={loadEntries}>Refresh</button>
+                <button
+                  className="btn btn-sm"
+                  onClick={runAudit}
+                  disabled={auditRunning}
+                  style={{ background: 'var(--accent-pink)', color: '#fff' }}
+                >
+                  {auditRunning ? 'Auditing…' : 'Audit KB'}
+                </button>
               </div>
+
+              {auditRunning && auditProgress && (
+                <div className="info-box" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className="spinner" style={{ width: 16, height: 16 }}></span>
+                  {auditProgress}
+                </div>
+              )}
+
+              {auditResult && !auditResult.error && (
+                <div className="info-box" style={{ marginBottom: 12, borderLeft: `3px solid ${auditResult.clean ? 'var(--accent-green)' : 'var(--accent-orange)'}` }}>
+                  <strong>{auditResult.clean ? 'KB is clean!' : 'Issues found'}</strong>
+                  <div style={{ fontSize: 13, marginTop: 4 }}>
+                    Scanned {auditResult.total} entries.
+                    {auditResult.duplicates?.length > 0 && <span> {auditResult.duplicates.length} duplicate{auditResult.duplicates.length !== 1 ? 's' : ''} detected.</span>}
+                    {auditResult.contradictions?.length > 0 && <span> {auditResult.contradictions.length} contradiction{auditResult.contradictions.length !== 1 ? 's' : ''} flagged as stale.</span>}
+                    {auditResult.clean && <span> No duplicates or contradictions found.</span>}
+                  </div>
+                  {auditResult.duplicates?.length > 0 && (
+                    <details style={{ marginTop: 8, fontSize: 13 }}>
+                      <summary style={{ cursor: 'pointer' }}>Duplicates ({auditResult.duplicates.length})</summary>
+                      <ul style={{ marginTop: 4, paddingLeft: 16 }}>
+                        {auditResult.duplicates.map((d, i) => (
+                          <li key={i}>Keep #{d.keep_id}, remove #{d.remove_id} — {d.reason}</li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                  {auditResult.contradictions?.length > 0 && (
+                    <details style={{ marginTop: 8, fontSize: 13 }}>
+                      <summary style={{ cursor: 'pointer' }}>Contradictions ({auditResult.contradictions.length})</summary>
+                      <ul style={{ marginTop: 4, paddingLeft: 16 }}>
+                        {auditResult.contradictions.map((c, i) => (
+                          <li key={i}>Keep #{c.keep_id}, stale #{c.stale_id} — {c.conflict}</li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                </div>
+              )}
+
+              {auditResult?.error && (
+                <div className="error-banner" style={{ marginBottom: 12 }}>{auditResult.error}</div>
+              )}
 
               {entries.length === 0 ? (
                 <div className="empty-state">

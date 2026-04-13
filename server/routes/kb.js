@@ -25,6 +25,113 @@ Return a JSON object with these fields:
 
 Return ONLY valid JSON, no markdown fences.`;
 
+// --- Deduplication: match existing entries or insert new ---
+
+async function getExistingSummary() {
+  const { data, error } = await supabase
+    .from('kb_entries')
+    .select('id, title, feature_name, content, created_at, updated_at')
+    .order('updated_at', { ascending: false })
+    .limit(200);
+  if (error) throw new Error(`Failed to fetch existing entries: ${error.message}`);
+  return (data || []).map(e => `[ID:${e.id}] ${e.title}${e.feature_name ? ` (${e.feature_name})` : ''}: ${e.content.slice(0, 120)}`).join('\n');
+}
+
+async function matchOrInsert(parsed, source, version, fileUrl) {
+  const existingSummary = await getExistingSummary();
+
+  if (!existingSummary) {
+    return createEntry(parsed, source, version, fileUrl);
+  }
+
+  const matchResponse = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 500,
+    messages: [{
+      role: 'user',
+      content: `A new knowledge base entry has been extracted from an upload. Check if it overlaps with any existing entry below.
+
+NEW ENTRY:
+Title: ${parsed.title}
+Feature: ${parsed.feature_name || 'N/A'}
+Content: ${parsed.content?.slice(0, 300)}
+
+EXISTING ENTRIES:
+${existingSummary}
+
+The new content is MORE RECENT and should take precedence over existing entries when they conflict.
+
+Return a JSON object with:
+- "action": "update" if the new entry covers the same feature/topic as an existing one, or "create" if it is genuinely new
+- "update_id": the ID of the existing entry to replace (or null if action is "create")
+- "stale_entries": array of { "id": N, "reason": "..." } for any existing entries that now contradict this new information
+
+Return ONLY valid JSON, no markdown fences.`,
+    }],
+  });
+
+  const matchResult = JSON.parse(matchResponse.content[0].text);
+
+  let entry;
+  let action;
+
+  if (matchResult.action === 'update' && matchResult.update_id) {
+    const { data, error } = await supabase
+      .from('kb_entries')
+      .update({
+        ...parsed,
+        related_features: parsed.related_features || [],
+        source,
+        version,
+        file_url: fileUrl || null,
+        is_stale: false,
+        stale_reason: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', matchResult.update_id)
+      .select()
+      .single();
+    if (error) throw new Error(`Failed to update entry ${matchResult.update_id}: ${error.message}`);
+    entry = data;
+    action = 'updated';
+  } else {
+    const result = await createEntry(parsed, source, version, fileUrl);
+    entry = result.entry;
+    action = 'created';
+  }
+
+  await embedAndStoreEntry(entry.id, `${entry.title} ${entry.content}`);
+
+  let staleCount = 0;
+  for (const stale of matchResult.stale_entries || []) {
+    const { error: staleError } = await supabase
+      .from('kb_entries')
+      .update({ is_stale: true, stale_reason: stale.reason })
+      .eq('id', stale.id);
+    if (staleError) console.error(`[Dedup] Failed to mark entry ${stale.id} stale:`, staleError.message);
+    else staleCount++;
+  }
+
+  return { entry, action, staleCount };
+}
+
+async function createEntry(parsed, source, version, fileUrl) {
+  const { data, error } = await supabase
+    .from('kb_entries')
+    .insert({
+      ...parsed,
+      related_features: parsed.related_features || [],
+      source,
+      version,
+      file_url: fileUrl || null,
+      updated_at: new Date().toISOString(),
+    })
+    .select()
+    .single();
+  if (error) throw new Error(`Failed to create entry: ${error.message}`);
+  return { entry: data, action: 'created', staleCount: 0 };
+}
+
 // --- List entries ---
 router.get('/', asyncHandler(async (req, res) => {
   const { search, source, version, stale, limit = 100, offset = 0 } = req.query;
@@ -163,24 +270,8 @@ async function processImage(file, version) {
   });
 
   const parsed = JSON.parse(response.content[0].text);
-
-  const { data, error } = await supabase
-    .from('kb_entries')
-    .insert({
-      ...parsed,
-      related_features: parsed.related_features || [],
-      source: 'image_upload',
-      version,
-      file_url: urlData.publicUrl,
-      updated_at: new Date().toISOString(),
-    })
-    .select()
-    .single();
-
-  if (error) throw new Error(`Failed to save entry: ${error.message}`);
-
-  await embedAndStoreEntry(data.id, `${data.title} ${data.content}`);
-  return data;
+  const result = await matchOrInsert(parsed, 'image_upload', version, urlData.publicUrl);
+  return result.entry;
 }
 
 async function processAudioVideo(file, version) {
@@ -221,24 +312,8 @@ async function processAudioVideo(file, version) {
   });
 
   const parsed = JSON.parse(response.content[0].text);
-
-  const { data, error } = await supabase
-    .from('kb_entries')
-    .insert({
-      ...parsed,
-      related_features: parsed.related_features || [],
-      source: 'voice_note',
-      version,
-      file_url: urlData.publicUrl,
-      updated_at: new Date().toISOString(),
-    })
-    .select()
-    .single();
-
-  if (error) throw new Error(`Failed to save entry: ${error.message}`);
-
-  await embedAndStoreEntry(data.id, `${data.title} ${data.content}`);
-  return data;
+  const result = await matchOrInsert(parsed, 'voice_note', version, urlData.publicUrl);
+  return result.entry;
 }
 
 async function processTextFile(file, version) {
@@ -254,23 +329,8 @@ async function processTextFile(file, version) {
   });
 
   const parsed = JSON.parse(response.content[0].text);
-
-  const { data, error } = await supabase
-    .from('kb_entries')
-    .insert({
-      ...parsed,
-      related_features: parsed.related_features || [],
-      source: 'text_file',
-      version,
-      updated_at: new Date().toISOString(),
-    })
-    .select()
-    .single();
-
-  if (error) throw new Error(`Failed to save entry: ${error.message}`);
-
-  await embedAndStoreEntry(data.id, `${data.title} ${data.content}`);
-  return data;
+  const result = await matchOrInsert(parsed, 'text_file', version, null);
+  return result.entry;
 }
 
 // --- Process tutorial video (SSE) ---
@@ -403,25 +463,9 @@ ${STRUCTURED_PROMPT}`,
       });
 
       const parsed = JSON.parse(structureResponse.content[0].text);
-
-      const { data, error } = await supabase
-        .from('kb_entries')
-        .insert({
-          ...parsed,
-          related_features: parsed.related_features || [],
-          source: 'tutorial_video',
-          version,
-          file_url: fileUrl,
-          updated_at: new Date().toISOString(),
-        })
-        .select()
-        .single();
-
-      if (error) throw new Error(`Failed to save entry: ${error.message}`);
-
-      await embedAndStoreEntry(data.id, `${data.title} ${data.content}`);
-      entries.push(data);
-      send({ type: 'entry', entry: data });
+      const result = await matchOrInsert(parsed, 'tutorial_video', version, fileUrl);
+      entries.push(result.entry);
+      send({ type: 'entry', entry: result.entry, action: result.action, staleCount: result.staleCount });
     }
 
     send({ type: 'done', count: entries.length });
@@ -560,23 +604,8 @@ router.post('/process-description', asyncHandler(async (req, res) => {
   });
 
   const parsed = JSON.parse(response.content[0].text);
-
-  const { data, error } = await supabase
-    .from('kb_entries')
-    .insert({
-      ...parsed,
-      related_features: parsed.related_features || [],
-      source: 'description',
-      version,
-      updated_at: new Date().toISOString(),
-    })
-    .select()
-    .single();
-
-  if (error) throw new Error(`Failed to save entry: ${error.message}`);
-
-  await embedAndStoreEntry(data.id, `${data.title} ${data.content}`);
-  res.status(201).json(data);
+  const result = await matchOrInsert(parsed, 'description', version, null);
+  res.status(result.action === 'created' ? 201 : 200).json({ ...result.entry, _action: result.action, _staleCount: result.staleCount });
 }));
 
 // --- Bulk import ---
@@ -835,6 +864,104 @@ export async function cleanupExpiredFiles() {
 router.post('/cleanup-files', asyncHandler(async (_req, res) => {
   const result = await cleanupExpiredFiles();
   res.json(result);
+}));
+
+// --- KB audit: scan for duplicates and contradictions ---
+const AUDIT_BATCH_SIZE = 40;
+
+router.post('/audit', asyncHandler(async (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+  });
+
+  function send(obj) {
+    res.write(`data: ${JSON.stringify(obj)}\n\n`);
+  }
+
+  send({ type: 'progress', message: 'Fetching knowledge base entries...' });
+
+  const { data: allEntries, error } = await supabase
+    .from('kb_entries')
+    .select('id, title, feature_name, content, source, version, created_at, updated_at, is_stale')
+    .order('updated_at', { ascending: false });
+
+  if (error) throw new Error(`Failed to fetch entries: ${error.message}`);
+  if (!allEntries || allEntries.length === 0) {
+    send({ type: 'done', duplicates: [], contradictions: [], clean: true, total: 0 });
+    res.end();
+    return;
+  }
+
+  send({ type: 'progress', message: `Analyzing ${allEntries.length} entries for duplicates and contradictions...` });
+
+  const summaries = allEntries.map(e =>
+    `[ID:${e.id}] (updated: ${e.updated_at}) ${e.title}${e.feature_name ? ` | Feature: ${e.feature_name}` : ''} | Source: ${e.source} | Content: ${e.content.slice(0, 200)}`
+  );
+
+  const allDuplicates = [];
+  const allContradictions = [];
+
+  for (let i = 0; i < summaries.length; i += AUDIT_BATCH_SIZE) {
+    const batch = summaries.slice(i, i + AUDIT_BATCH_SIZE);
+    const batchNum = Math.floor(i / AUDIT_BATCH_SIZE) + 1;
+    const totalBatches = Math.ceil(summaries.length / AUDIT_BATCH_SIZE);
+
+    send({ type: 'progress', message: `Scanning batch ${batchNum}/${totalBatches}...` });
+
+    const auditResponse = await anthropic.messages.create({
+      model: MODEL,
+      max_tokens: 4000,
+      messages: [{
+        role: 'user',
+        content: `Review these knowledge base entries for a video editing application.
+Identify:
+1. DUPLICATES: entries covering the same feature/topic (list both IDs)
+2. CONTRADICTIONS: entries that give conflicting information (list both IDs and explain the conflict)
+3. For each conflict, indicate which entry is more recent (by updated date) and should be kept.
+
+ENTRIES:
+${batch.join('\n')}
+
+Return a JSON object:
+{
+  "duplicates": [{ "keep_id": N, "remove_id": N, "reason": "..." }],
+  "contradictions": [{ "keep_id": N, "stale_id": N, "conflict": "..." }],
+  "clean": true/false
+}
+
+Return ONLY valid JSON, no markdown fences.`,
+      }],
+    });
+
+    const batchResult = JSON.parse(auditResponse.content[0].text);
+    allDuplicates.push(...(batchResult.duplicates || []));
+    allContradictions.push(...(batchResult.contradictions || []));
+  }
+
+  let flaggedCount = 0;
+  for (const c of allContradictions) {
+    if (c.stale_id) {
+      const { error: flagError } = await supabase
+        .from('kb_entries')
+        .update({ is_stale: true, stale_reason: c.conflict })
+        .eq('id', c.stale_id);
+      if (flagError) console.error(`[Audit] Failed to flag entry ${c.stale_id}:`, flagError.message);
+      else flaggedCount++;
+    }
+  }
+
+  send({
+    type: 'done',
+    duplicates: allDuplicates,
+    contradictions: allContradictions,
+    flagged: flaggedCount,
+    total: allEntries.length,
+    clean: allDuplicates.length === 0 && allContradictions.length === 0,
+  });
+
+  res.end();
 }));
 
 export default router;
