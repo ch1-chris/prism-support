@@ -16,8 +16,10 @@ export default function AdminChat() {
   const [input, setInput] = useState('');
   const [files, setFiles] = useState([]);
   const [loaded, setLoaded] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const chatEndRef = useRef();
   const fileInputRef = useRef();
+  const dragCounter = useRef(0);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -168,10 +170,67 @@ export default function AdminChat() {
     }
   }
 
+  function handleDragEnter(e) {
+    e.preventDefault();
+    dragCounter.current++;
+    if (e.dataTransfer?.types?.includes('Files')) {
+      setDragging(true);
+    }
+  }
+
+  function handleDragLeave(e) {
+    e.preventDefault();
+    dragCounter.current--;
+    if (dragCounter.current === 0) {
+      setDragging(false);
+    }
+  }
+
+  function handleDragOver(e) {
+    e.preventDefault();
+  }
+
+  function handleDrop(e) {
+    e.preventDefault();
+    dragCounter.current = 0;
+    setDragging(false);
+    const dropped = Array.from(e.dataTransfer.files);
+    if (dropped.length) {
+      setFiles((prev) => [...prev, ...dropped]);
+    }
+  }
+
   const showOnboarding = loaded && messages.length === 0;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)', minHeight: 400 }}>
+    <div
+      style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)', minHeight: 400, position: 'relative' }}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
+      {dragging && (
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 10,
+          background: 'rgba(255, 183, 0, 0.06)',
+          border: '2px dashed var(--prism-orange)',
+          borderRadius: 8,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          pointerEvents: 'none',
+        }}>
+          <span style={{
+            fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 450,
+            textTransform: 'uppercase', letterSpacing: '0.04em',
+            color: 'var(--prism-orange)', padding: '12px 24px',
+            background: 'var(--bg-card)', borderRadius: 'var(--radius-full)',
+            boxShadow: 'var(--shadow)',
+          }}>
+            Drop files here
+          </span>
+        </div>
+      )}
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)' }}>
           Chat with Claude about your KB content. Attach screenshots or files for context.
