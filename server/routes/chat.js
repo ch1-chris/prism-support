@@ -158,7 +158,11 @@ router.post('/stream', asyncHandler(async (req, res) => {
     res.write(`data: ${JSON.stringify({ type: 'followups', content: followUps })}\n\n`);
     res.write(`data: ${JSON.stringify({ type: 'done', analyticsId: analyticsEntry?.id })}\n\n`);
   } catch (err) {
-    res.write(`data: ${JSON.stringify({ type: 'error', content: err.message })}\n\n`);
+    const isRateLimit = err.status === 429 || err.error?.type === 'rate_limit_error';
+    const message = isRateLimit
+      ? "We're processing too many requests at the moment. Please try again in a few minutes, or contact your Prism account rep for urgent questions."
+      : err.message;
+    res.write(`data: ${JSON.stringify({ type: 'error', content: message })}\n\n`);
   }
 
   res.end();

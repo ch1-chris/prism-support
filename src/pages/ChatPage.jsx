@@ -22,6 +22,8 @@ function detectLanguage() {
   return getSupportedLanguage(navigator.language);
 }
 
+const RATE_LIMIT_MESSAGE = "We're processing too many requests at the moment. Please try again in a few minutes, or contact your Prism account rep for urgent questions.";
+
 const SUGGESTIONS = [
   { text: 'How do I export my project?', icon: '↗', color: 'var(--section-distribution)' },
   { text: 'Where is the trim tool?', icon: '✂', color: 'var(--section-editing)' },
@@ -72,6 +74,15 @@ export default function ChatPage() {
 
     try {
       const response = await chat.stream(text, sessionId, version, language);
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        if (response.status === 429) {
+          throw new Error(RATE_LIMIT_MESSAGE);
+        }
+        throw new Error(body.error || `Request failed (${response.status})`);
+      }
+
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let fullText = '';
