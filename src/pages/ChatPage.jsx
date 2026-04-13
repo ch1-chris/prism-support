@@ -1,10 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { chat, kb } from '../lib/api';
+import { chat } from '../lib/api';
 import ChatMessage from '../components/ChatMessage';
 import ChatInput from '../components/ChatInput';
 import FollowUps from '../components/FollowUps';
-import VersionSelector from '../components/VersionSelector';
 import LanguageSelector, { getSupportedLanguage } from '../components/LanguageSelector';
 import Markdown from 'react-markdown';
 
@@ -39,8 +38,7 @@ export default function ChatPage() {
   const [streaming, setStreaming] = useState(false);
   const [streamText, setStreamText] = useState('');
   const [followUps, setFollowUps] = useState([]);
-  const [versions, setVersions] = useState([]);
-  const [version, setVersion] = useState('all');
+  const [version] = useState('all');
   const [language, setLanguage] = useState(detectLanguage);
   const [sessionId] = useState(getSessionId);
   const [loaded, setLoaded] = useState(false);
@@ -54,12 +52,8 @@ export default function ChatPage() {
   useEffect(() => {
     async function init() {
       try {
-        const [history, versionList] = await Promise.all([
-          chat.getSession(sessionId).catch((err) => { console.error('Failed to load session history:', err); return []; }),
-          kb.getVersions().catch((err) => { console.error('Failed to load versions:', err); return []; }),
-        ]);
+        const history = await chat.getSession(sessionId).catch((err) => { console.error('Failed to load session history:', err); return []; });
         if (history?.length) setMessages(history);
-        if (versionList?.length) setVersions(versionList);
       } catch (err) { console.error('Failed to initialize chat:', err); }
       setLoaded(true);
     }
@@ -192,7 +186,6 @@ export default function ChatPage() {
             <span className="chat-brand-text">Prism Support</span>
           </div>
           <div className="chat-topbar-controls">
-            <VersionSelector versions={versions} value={version} onChange={setVersion} />
             <LanguageSelector value={language} onChange={setLanguage} />
             <button className="chat-new-btn" onClick={handleNewSession} title="New conversation">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
