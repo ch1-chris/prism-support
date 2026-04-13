@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { readFileSync, unlinkSync } from 'fs';
+import { readFileSync, createReadStream, unlinkSync, statSync } from 'fs';
 import Anthropic from '@anthropic-ai/sdk';
 import { supabase } from '../db.js';
 import { embedAndStoreEntry } from '../embeddings.js';
@@ -334,14 +334,20 @@ async function processTextFile(file, version) {
 }
 
 // --- Process tutorial video (SSE) ---
+const MAX_STORAGE_UPLOAD_BYTES = 50 * 1024 * 1024;
+
 router.post('/process-video', videoUpload.single('file'), asyncHandler(async (req, res) => {
   ensureTmpDir();
   const file = req.file;
   if (!file) throw new Error('No video file provided');
   if (!process.env.ELEVENLABS_API_KEY) throw new Error('ELEVENLABS_API_KEY is required');
 
+  req.setTimeout(30 * 60 * 1000);
+  res.setTimeout(30 * 60 * 1000);
+
   const version = req.body.version || 'latest';
   const videoPath = file.path;
+  const fileSize = statSync(videoPath).size;
   let framesDir = null;
 
   res.writeHead(200, {
@@ -358,13 +364,12 @@ router.post('/process-video', videoUpload.single('file'), asyncHandler(async (re
   try {
     send({ type: 'progress', step: 'starting', message: 'Starting video processing...' });
 
-    // Step 1: parallel transcription + frame extraction
     send({ type: 'progress', step: 'transcribing', message: 'Transcribing audio and extracting frames...' });
 
-    const videoBuffer = readFileSync(videoPath);
+    const videoBlob = new Blob([readFileSync(videoPath)], { type: file.mimetype });
 
     const [transcription, frameResult] = await Promise.all([
-      transcribeVideo(videoBuffer, file.mimetype),
+      transcribeVideo(videoBlob),
       extractFrames(videoPath),
     ]);
 
@@ -374,18 +379,25 @@ router.post('/process-video', videoUpload.single('file'), asyncHandler(async (re
 
     send({ type: 'progress', step: 'transcribed', message: `Transcribed ${transcript.length} characters, extracted ${allFrames.length} frames` });
 
-    // Step 2: upload video to storage
-    send({ type: 'progress', step: 'uploading', message: 'Uploading video to storage...' });
-    const storagePath = `media/${Date.now()}-${file.originalname}`;
-    const { error: uploadError } = await supabase.storage
-      .from('helpbot-uploads')
-      .upload(storagePath, videoBuffer, { contentType: file.mimetype });
-    if (uploadError) throw new Error(`Storage upload failed: ${uploadError.message}`);
-
-    const { data: urlData } = supabase.storage
-      .from('helpbot-uploads')
-      .getPublicUrl(storagePath);
-    const fileUrl = urlData.publicUrl;
+    let fileUrl = null;
+    if (fileSize <= MAX_STORAGE_UPLOAD_BYTES) {
+      send({ type: 'progress', step: 'uploading', message: 'Uploading video to storage...' });
+      const storagePath = `media/${Date.now()}-${file.originalname}`;
+      const videoBuffer = readFileSync(videoPath);
+      const { error: uploadError } = await supabase.storage
+        .from('helpbot-uploads')
+        .upload(storagePath, videoBuffer, { contentType: file.mimetype });
+      if (uploadError) {
+        console.error(`[Video] Storage upload skipped (${uploadError.message})`);
+      } else {
+        const { data: urlData } = supabase.storage
+          .from('helpbot-uploads')
+          .getPublicUrl(storagePath);
+        fileUrl = urlData.publicUrl;
+      }
+    } else {
+      send({ type: 'progress', step: 'uploading', message: `Video too large for storage (${Math.round(fileSize / 1024 / 1024)}MB), skipping file upload — knowledge will still be extracted.` });
+    }
 
     // Step 3: segment transcript into topics
     send({ type: 'progress', step: 'segmenting', message: 'Identifying topics in the video...' });
@@ -478,11 +490,10 @@ ${STRUCTURED_PROMPT}`,
   }
 }));
 
-async function transcribeVideo(buffer, mimetype) {
+async function transcribeVideo(blob) {
   const { ElevenLabsClient } = await import('@elevenlabs/elevenlabs-js');
   const elevenlabs = new ElevenLabsClient({ apiKey: process.env.ELEVENLABS_API_KEY });
 
-  const blob = new Blob([buffer], { type: mimetype });
   return elevenlabs.speechToText.convert({
     file: blob,
     modelId: 'scribe_v2',
