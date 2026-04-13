@@ -288,7 +288,7 @@ export default function AdminPage() {
                   className="btn btn-sm"
                   onClick={runAudit}
                   disabled={auditRunning}
-                  style={{ background: 'var(--accent-pink)', color: '#fff' }}
+                  style={{ background: '#F266FF', color: '#fff', borderColor: '#F266FF' }}
                 >
                   {auditRunning ? 'Auditing…' : 'Audit KB'}
                 </button>
@@ -302,7 +302,7 @@ export default function AdminPage() {
               )}
 
               {auditResult && !auditResult.error && (
-                <div className="info-box" style={{ marginBottom: 12, borderLeft: `3px solid ${auditResult.clean ? 'var(--accent-green)' : 'var(--accent-orange)'}` }}>
+                <div className="info-box" style={{ marginBottom: 12, borderLeft: `3px solid ${auditResult.clean ? 'var(--green)' : 'var(--prism-orange)'}` }}>
                   <strong>{auditResult.clean ? 'KB is clean!' : 'Issues found'}</strong>
                   <div style={{ fontSize: 13, marginTop: 4 }}>
                     Scanned {auditResult.total} entries.
