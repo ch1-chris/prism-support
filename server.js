@@ -77,7 +77,7 @@ app.use('/api/analytics', requireAuth, analyticsRoutes);
 
 if (isProd) {
   app.use(express.static(join(__dirname, 'dist')));
-  app.get('*', (req, res) => {
+  app.get('/:path*', (req, res) => {
     res.sendFile(join(__dirname, 'dist', 'index.html'));
   });
 }
