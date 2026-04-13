@@ -6,6 +6,7 @@ import ChatInput from '../components/ChatInput';
 import FollowUps from '../components/FollowUps';
 import VersionSelector from '../components/VersionSelector';
 import LanguageSelector, { getSupportedLanguage } from '../components/LanguageSelector';
+import Markdown from 'react-markdown';
 
 const SESSION_KEY = 'prism-support-session-id';
 
@@ -249,7 +250,7 @@ export default function ChatPage() {
               {streamText ? (
                 <div className="chat-msg chat-msg-assistant">
                   <div className="chat-msg-avatar chat-msg-avatar-ai">◈</div>
-                  <div className="chat-msg-bubble chat-msg-bubble-ai">{streamText}</div>
+                  <div className="chat-msg-bubble chat-msg-bubble-ai"><Markdown>{streamText}</Markdown></div>
                 </div>
               ) : (
                 <div className="chat-msg chat-msg-assistant">

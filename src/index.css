@@ -894,6 +894,108 @@ label {
   border: 1px solid var(--grey-100);
   border-bottom-left-radius: 4px;
   color: var(--grey-900);
+  white-space: normal;
+}
+
+.msg-assistant {
+  white-space: normal;
+}
+
+/* --- Markdown inside chat bubbles --- */
+
+.chat-msg-bubble-ai h1,
+.chat-msg-bubble-ai h2,
+.chat-msg-bubble-ai h3,
+.chat-msg-bubble-ai h4,
+.msg-assistant h1,
+.msg-assistant h2,
+.msg-assistant h3,
+.msg-assistant h4 {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  margin: 16px 0 8px;
+  line-height: 1.3;
+  color: var(--grey-900);
+}
+
+.chat-msg-bubble-ai h1, .msg-assistant h1 { font-size: 18px; }
+.chat-msg-bubble-ai h2, .msg-assistant h2 { font-size: 16px; }
+.chat-msg-bubble-ai h3, .msg-assistant h3 { font-size: 14px; }
+.chat-msg-bubble-ai h4, .msg-assistant h4 { font-size: 13px; }
+
+.chat-msg-bubble-ai h1:first-child,
+.chat-msg-bubble-ai h2:first-child,
+.chat-msg-bubble-ai h3:first-child,
+.msg-assistant h1:first-child,
+.msg-assistant h2:first-child,
+.msg-assistant h3:first-child {
+  margin-top: 0;
+}
+
+.chat-msg-bubble-ai p,
+.msg-assistant p {
+  margin: 8px 0;
+  line-height: 1.7;
+}
+
+.chat-msg-bubble-ai p:first-child,
+.msg-assistant p:first-child { margin-top: 0; }
+
+.chat-msg-bubble-ai p:last-child,
+.msg-assistant p:last-child { margin-bottom: 0; }
+
+.chat-msg-bubble-ai ul,
+.chat-msg-bubble-ai ol,
+.msg-assistant ul,
+.msg-assistant ol {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.chat-msg-bubble-ai li,
+.msg-assistant li {
+  margin: 4px 0;
+  line-height: 1.6;
+}
+
+.chat-msg-bubble-ai code,
+.msg-assistant code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--grey-100);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--grey-900);
+}
+
+.chat-msg-bubble-ai pre,
+.msg-assistant pre {
+  margin: 10px 0;
+  padding: 12px;
+  background: var(--grey-900);
+  border-radius: var(--radius-xs);
+  overflow-x: auto;
+}
+
+.chat-msg-bubble-ai pre code,
+.msg-assistant pre code {
+  background: none;
+  padding: 0;
+  color: var(--grey-50);
+  font-size: 12px;
+}
+
+.chat-msg-bubble-ai strong,
+.msg-assistant strong {
+  font-weight: 600;
+  color: var(--grey-900);
+}
+
+.chat-msg-bubble-ai hr,
+.msg-assistant hr {
+  border: none;
+  border-top: 1px solid var(--grey-100);
+  margin: 12px 0;
 }
 
 /* --- Message Actions --- */

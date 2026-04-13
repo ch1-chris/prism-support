@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import Markdown from 'react-markdown';
 import { chat } from '../lib/api';
 
 export default function ChatMessage({ msg, onEscalate }) {
@@ -31,7 +32,7 @@ export default function ChatMessage({ msg, onEscalate }) {
     <div className="chat-msg chat-msg-assistant">
       <div className="chat-msg-avatar chat-msg-avatar-ai">◈</div>
       <div>
-        <div className="chat-msg-bubble chat-msg-bubble-ai">{msg.content}</div>
+        <div className="chat-msg-bubble chat-msg-bubble-ai"><Markdown>{msg.content}</Markdown></div>
         <div className="chat-msg-actions">
           <button
             className={`chat-action-btn ${feedback === 1 ? 'active-up' : ''}`}

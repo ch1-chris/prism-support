@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import Markdown from 'react-markdown';
 import { adminChat } from '../lib/api';
 
 const SUGGESTIONS = [
@@ -278,7 +279,7 @@ export default function AdminChat() {
               </div>
             )}
             <div className={`msg ${msg.role === 'user' ? 'msg-user' : 'msg-assistant'}`}>
-              {msg.content}
+              {msg.role === 'assistant' ? <Markdown>{msg.content}</Markdown> : msg.content}
             </div>
           </div>
         ))}
@@ -286,7 +287,7 @@ export default function AdminChat() {
         {streaming && (
           <>
             {streamText ? (
-              <div className="msg msg-assistant">{streamText}</div>
+              <div className="msg msg-assistant"><Markdown>{streamText}</Markdown></div>
             ) : (
               <div className="msg-thinking">
                 <div className="spinner" /> Thinking…
