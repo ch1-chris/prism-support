@@ -9,6 +9,7 @@ import authRoutes from './server/routes/auth.js';
 import kbRoutes from './server/routes/kb.js';
 import chatRoutes from './server/routes/chat.js';
 import analyticsRoutes from './server/routes/analytics.js';
+import adminChatRoutes from './server/routes/admin-chat.js';
 import { requireAuth } from './server/middleware/auth.js';
 import { chatLimiter } from './server/middleware/rateLimit.js';
 import rateLimit from 'express-rate-limit';
@@ -72,6 +73,7 @@ app.use('/api/auth', loginLimiter, authRoutes);
 app.use('/api/kb', requireAuth, kbRoutes);
 app.use('/api/chat', chatLimiter, chatRoutes);
 app.use('/api/analytics', requireAuth, analyticsRoutes);
+app.use('/api/admin-chat', requireAuth, adminChatRoutes);
 
 // --- Static Files (production) ---
 

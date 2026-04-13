@@ -9,9 +9,11 @@ import KBEntryCard from '../components/KBEntryCard';
 import AutoFetchConfig from '../components/AutoFetchConfig';
 import KBTestRunner from '../components/KBTestRunner';
 import SupportTickets from '../components/SupportTickets';
+import AdminChat from '../components/AdminChat';
 
 const TABS = [
   { id: 'dashboard', label: 'Dashboard', icon: '◈' },
+  { id: 'training', label: 'Training Chat', icon: '◉' },
   { id: 'upload', label: 'Upload', icon: '↑' },
   { id: 'changelog', label: 'Changelog', icon: '△' },
   { id: 'describe', label: 'Describe', icon: '✎' },
@@ -195,6 +197,8 @@ export default function AdminPage() {
 
         <div className="main-content">
           {activeTab === 'dashboard' && <AnalyticsDashboard />}
+
+          {activeTab === 'training' && <AdminChat />}
 
           {activeTab === 'upload' && (
             <UploadZone version={version} onEntryAdded={handleEntryAdded} />

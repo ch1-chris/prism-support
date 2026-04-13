@@ -92,6 +92,22 @@ export const chat = {
     }),
 };
 
+// --- Admin Chat ---
+export const adminChat = {
+  stream: (message) => {
+    return fetch('/api/admin-chat/stream', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message }),
+    });
+  },
+
+  history: () => request('/api/admin-chat/history'),
+
+  clear: () => request('/api/admin-chat/clear', { method: 'POST' }),
+};
+
 // --- Analytics ---
 export const analytics = {
   summary: () => request('/api/analytics/summary'),
