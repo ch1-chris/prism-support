@@ -8,7 +8,7 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 const router = Router();
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const MODEL = 'claude-sonnet-4-20250514';
+const MODEL = 'claude-sonnet-4-6';
 
 const STRUCTURED_PROMPT = `You are extracting information from content about a video editing application.
 Return a JSON object with these fields:
