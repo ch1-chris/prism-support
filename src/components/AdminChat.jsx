@@ -282,7 +282,7 @@ export default function AdminChat() {
               </>
             ) : (
               <>
-                <div className="admin-chat-avatar admin-chat-avatar-ai">◈</div>
+                <img src="/prism-logo.png" alt="Prism" className="admin-chat-avatar admin-chat-avatar-ai" />
                 <div className="admin-chat-bubble admin-chat-bubble-ai">
                   <Markdown>{msg.content}</Markdown>
                 </div>
@@ -293,7 +293,7 @@ export default function AdminChat() {
 
         {streaming && (
           <div className="admin-chat-msg admin-chat-msg-ai">
-            <div className="admin-chat-avatar admin-chat-avatar-ai">◈</div>
+            <img src="/prism-logo.png" alt="Prism" className="admin-chat-avatar admin-chat-avatar-ai" />
             {streamText ? (
               <div className="admin-chat-bubble admin-chat-bubble-ai"><Markdown>{streamText}</Markdown></div>
             ) : (

@@ -30,7 +30,7 @@ export default function ChatMessage({ msg, onEscalate }) {
 
   return (
     <div className="chat-msg chat-msg-assistant">
-      <div className="chat-msg-avatar chat-msg-avatar-ai">◈</div>
+      <img src="/prism-logo.png" alt="Prism" className="chat-msg-avatar chat-msg-avatar-ai" />
       <div>
         <div className="chat-msg-bubble chat-msg-bubble-ai"><Markdown>{msg.content}</Markdown></div>
         <div className="chat-msg-actions">

@@ -179,6 +179,7 @@ export default function AdminPage() {
       )}
       <div className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`}>
         <div className="sidebar-brand">
+          <img src="/prism-logo.png" alt="Prism" className="sidebar-brand-logo" />
           Prism Support <span>admin</span>
         </div>
         <div className="sidebar-section">Manage</div>

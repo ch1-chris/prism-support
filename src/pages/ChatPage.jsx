@@ -182,7 +182,7 @@ export default function ChatPage() {
       <header className="chat-topbar">
         <div className="chat-topbar-inner">
           <div className="chat-brand">
-            <span className="chat-brand-icon">◈</span>
+            <img src="/prism-logo.png" alt="Prism" className="chat-brand-icon" />
             <span className="chat-brand-text">Prism Support</span>
           </div>
           <div className="chat-topbar-controls">
@@ -198,76 +198,82 @@ export default function ChatPage() {
         </div>
       </header>
 
-      <div className="chat-body">
-        <div className="chat-scroll">
-          {showOnboarding && (
-            <div className="chat-onboarding">
-              <div className="chat-hero">
-                <div className="chat-hero-badge">Support Assistant</div>
-                <h1 className="chat-hero-title">
-                  How can we help<br />you today?
-                </h1>
-                <p className="chat-hero-subtitle">
-                  Ask anything about the video editor — from basic features to advanced workflows.
-                </p>
-              </div>
-
-              <div className="chat-suggestions">
-                {SUGGESTIONS.map((s, i) => (
-                  <button
-                    key={i}
-                    className="chat-suggestion-card"
-                    onClick={() => sendMessage(s.text)}
-                  >
-                    <span className="chat-suggestion-icon" style={{ background: s.color }}>
-                      {s.icon}
-                    </span>
-                    <span className="chat-suggestion-text">{s.text}</span>
-                    <span className="chat-suggestion-arrow">→</span>
-                  </button>
-                ))}
-              </div>
+      {showOnboarding ? (
+        <div className="chat-onboarding-layout">
+          <div className="chat-onboarding">
+            <div className="chat-hero">
+              <div className="chat-hero-badge">Support Assistant</div>
+              <h1 className="chat-hero-title">
+                How can we help<br />you today?
+              </h1>
+              <p className="chat-hero-subtitle">
+                Ask anything about the video editor — from basic features to advanced workflows.
+              </p>
             </div>
-          )}
 
-          {messages.map((msg, i) => (
-            <ChatMessage
-              key={i}
-              msg={msg}
-              onEscalate={msg.role === 'assistant' ? handleEscalate : null}
-            />
-          ))}
+            <div className="chat-suggestions">
+              {SUGGESTIONS.map((s, i) => (
+                <button
+                  key={i}
+                  className="chat-suggestion-card"
+                  onClick={() => sendMessage(s.text)}
+                >
+                  <span className="chat-suggestion-icon" style={{ background: s.color }}>
+                    {s.icon}
+                  </span>
+                  <span className="chat-suggestion-text">{s.text}</span>
+                  <span className="chat-suggestion-arrow">→</span>
+                </button>
+              ))}
+            </div>
 
-          {streaming && (
-            <>
-              {streamText ? (
-                <div className="chat-msg chat-msg-assistant">
-                  <div className="chat-msg-avatar chat-msg-avatar-ai">◈</div>
-                  <div className="chat-msg-bubble chat-msg-bubble-ai"><Markdown>{streamText}</Markdown></div>
-                </div>
-              ) : (
-                <div className="chat-msg chat-msg-assistant">
-                  <div className="chat-msg-avatar chat-msg-avatar-ai">◈</div>
-                  <div className="chat-msg-thinking">
-                    <div className="chat-thinking-dots">
-                      <span /><span /><span />
-                    </div>
-                    Thinking…
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-
-          {!streaming && followUps.length > 0 && (
-            <FollowUps questions={followUps} onSelect={sendMessage} />
-          )}
-
-          <div ref={chatEndRef} />
+            <ChatInput onSend={sendMessage} disabled={streaming || escalating} />
+          </div>
         </div>
-      </div>
+      ) : (
+        <>
+          <div className="chat-body">
+            <div className="chat-scroll">
+              {messages.map((msg, i) => (
+                <ChatMessage
+                  key={i}
+                  msg={msg}
+                  onEscalate={msg.role === 'assistant' ? handleEscalate : null}
+                />
+              ))}
 
-      <ChatInput onSend={sendMessage} disabled={streaming || escalating} />
+              {streaming && (
+                <>
+                  {streamText ? (
+                    <div className="chat-msg chat-msg-assistant">
+                      <img src="/prism-logo.png" alt="Prism" className="chat-msg-avatar chat-msg-avatar-ai" />
+                      <div className="chat-msg-bubble chat-msg-bubble-ai"><Markdown>{streamText}</Markdown></div>
+                    </div>
+                  ) : (
+                    <div className="chat-msg chat-msg-assistant">
+                      <img src="/prism-logo.png" alt="Prism" className="chat-msg-avatar chat-msg-avatar-ai" />
+                      <div className="chat-msg-thinking">
+                        <div className="chat-thinking-dots">
+                          <span /><span /><span />
+                        </div>
+                        Thinking…
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {!streaming && followUps.length > 0 && (
+                <FollowUps questions={followUps} onSelect={sendMessage} />
+              )}
+
+              <div ref={chatEndRef} />
+            </div>
+          </div>
+
+          <ChatInput onSend={sendMessage} disabled={streaming || escalating} />
+        </>
+      )}
     </div>
   );
 }

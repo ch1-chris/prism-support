@@ -25,6 +25,7 @@ export default function LoginPage() {
   return (
     <div className="login-container">
       <form className="login-card" onSubmit={handleSubmit}>
+        <img src="/prism-logo.png" alt="Prism" style={{ width: 56, height: 56, borderRadius: 12, marginBottom: 12 }} />
         <h1>Prism Support</h1>
         <p>Enter the admin password to continue.</p>
         <div className="field">

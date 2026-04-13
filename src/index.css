@@ -160,6 +160,16 @@ html, body, #root {
   text-transform: uppercase;
   border-bottom: 1px solid var(--border-fine);
   color: var(--prism-orange);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sidebar-brand-logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  object-fit: cover;
 }
 
 .sidebar-brand span {
@@ -626,16 +636,10 @@ label {
 }
 
 .chat-brand-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   width: 36px;
   height: 36px;
   border-radius: var(--radius-sm);
-  background: var(--prism-orange);
-  color: var(--grey-900);
-  font-size: 18px;
-  font-weight: 600;
+  object-fit: cover;
 }
 
 .chat-brand-text {
@@ -716,11 +720,25 @@ label {
 
 /* --- Onboarding / Hero --- */
 
+.chat-onboarding-layout {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 24px;
+}
+
 .chat-onboarding {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 32px 0 16px;
+  width: 100%;
+  max-width: 900px;
+}
+
+.chat-onboarding .chat-input-bar {
+  margin-top: 40px;
 }
 
 .chat-hero {
@@ -863,9 +881,7 @@ label {
 }
 
 .chat-msg-avatar-ai {
-  background: linear-gradient(135deg, var(--section-home), var(--section-distribution));
-  color: var(--grey-0);
-  font-size: 16px;
+  object-fit: cover;
 }
 
 .chat-msg-avatar-user {
@@ -1425,9 +1441,7 @@ label {
 }
 
 .admin-chat-avatar-ai {
-  background: linear-gradient(135deg, var(--section-home), var(--section-distribution));
-  color: var(--grey-0);
-  font-size: 16px;
+  object-fit: cover;
 }
 
 .admin-chat-avatar-user {
