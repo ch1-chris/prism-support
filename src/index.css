@@ -159,7 +159,7 @@ html, body, #root {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   border-bottom: 1px solid var(--border-fine);
-  color: var(--grey-0);
+  color: var(--prism-orange);
 }
 
 .sidebar-brand span {
@@ -205,6 +205,8 @@ html, body, #root {
 .sidebar-link.active {
   color: var(--prism-orange);
   background: var(--bg-sidebar-active);
+  border-left: 3px solid var(--prism-orange);
+  padding-left: 17px;
 }
 
 .sidebar-footer {
@@ -403,6 +405,16 @@ label {
 
 .card-header strong {
   font-weight: 500;
+  color: var(--grey-900);
+}
+
+.card-header::before {
+  content: '';
+  width: 3px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--prism-orange);
+  flex-shrink: 0;
 }
 
 .card-body { padding: 20px; }
@@ -469,6 +481,7 @@ label {
   font-weight: 450;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  color: var(--section-distribution);
 }
 
 /* === Source Icons === */
@@ -488,12 +501,12 @@ label {
   letter-spacing: 0.02em;
 }
 
-.source-image_upload { background: var(--blue-soft); color: #0E8FBF; }
-.source-text_file { background: var(--green-soft); color: #1F9E35; }
-.source-changelog { background: var(--grey-50); color: var(--grey-500); }
-.source-description { background: var(--amber-soft); color: #B87A00; }
-.source-voice_note { background: #F3E8FF; color: #7040FF; }
-.source-bulk_import { background: var(--grey-50); color: var(--grey-500); }
+.source-image_upload { background: #E8F8FF; color: var(--section-distribution); }
+.source-text_file { background: #EAFCEE; color: var(--section-finance); }
+.source-changelog { background: #FFF6E5; color: var(--section-editing); }
+.source-description { background: #F0E8FF; color: var(--section-writers); }
+.source-voice_note { background: #FFE8FC; color: var(--section-library); }
+.source-bulk_import { background: #E8F8FF; color: var(--section-distribution); }
 
 /* === KB Entry === */
 
@@ -564,7 +577,8 @@ label {
   display: flex;
   align-items: center;
   gap: 12px;
-  background: var(--bg-card);
+  background: var(--grey-900);
+  color: var(--grey-0);
 }
 
 .chat-header h1 {
@@ -574,7 +588,7 @@ label {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   flex: 1;
-  color: var(--grey-900);
+  color: var(--prism-orange);
 }
 
 .chat-messages {
@@ -657,6 +671,20 @@ label {
 
 .chat-input-row input { flex: 1; }
 
+.chat-header .btn {
+  color: rgba(255, 255, 255, 0.7);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+.chat-header .btn:hover {
+  color: var(--grey-0);
+  background: rgba(255, 255, 255, 0.1);
+}
+.chat-header .selectors-row select {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.8);
+}
+
 /* === Follow-ups === */
 
 .followups {
@@ -700,7 +728,7 @@ label {
   font-family: var(--font-sans);
   font-size: 24px;
   font-weight: 400;
-  color: var(--grey-900);
+  color: var(--prism-orange);
   margin-bottom: 8px;
 }
 
@@ -766,6 +794,7 @@ label {
   border-top-color: var(--prism-orange);
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
+  filter: drop-shadow(0 0 3px rgba(255, 183, 0, 0.3));
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -822,7 +851,14 @@ label {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 20px;
+  border-top: 3px solid var(--border);
 }
+
+.stat-card:nth-child(1) { border-top-color: var(--section-home); }
+.stat-card:nth-child(2) { border-top-color: var(--amber); }
+.stat-card:nth-child(3) { border-top-color: var(--section-distribution); }
+.stat-card:nth-child(4) { border-top-color: var(--red); }
+.stat-card:nth-child(5) { border-top-color: var(--green); }
 
 .stat-card .stat-value {
   font-family: var(--font-sans);
@@ -858,6 +894,7 @@ label {
   max-width: 380px;
   background: var(--bg-card);
   border: 1px solid var(--border);
+  border-top: 3px solid var(--prism-orange);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   padding: 32px;
@@ -869,7 +906,7 @@ label {
   font-weight: 450;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--grey-900);
+  color: var(--prism-orange);
   margin-bottom: 6px;
 }
 
@@ -894,8 +931,8 @@ label {
   margin-bottom: 8px;
 }
 
-.test-pass { border-left: 3px solid var(--green); }
-.test-fail { border-left: 3px solid var(--red); }
+.test-pass { border-left: 3px solid var(--green); background: var(--green-soft); }
+.test-fail { border-left: 3px solid var(--red); background: var(--red-soft); }
 
 /* === Selectors row === */
 

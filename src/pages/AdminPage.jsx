@@ -12,16 +12,16 @@ import SupportTickets from '../components/SupportTickets';
 import AdminChat from '../components/AdminChat';
 
 const TABS = [
-  { id: 'dashboard', label: 'Dashboard', icon: '◈' },
-  { id: 'training', label: 'Training Chat', icon: '◉' },
-  { id: 'upload', label: 'Upload', icon: '↑' },
-  { id: 'changelog', label: 'Changelog', icon: '△' },
-  { id: 'describe', label: 'Describe', icon: '✎' },
-  { id: 'entries', label: 'KB Browser', icon: '☰' },
-  { id: 'bulk', label: 'Bulk Import', icon: '⤓' },
-  { id: 'autofetch', label: 'Auto-Fetch', icon: '⟳' },
-  { id: 'tests', label: 'Test Runner', icon: '✓' },
-  { id: 'tickets', label: 'Tickets', icon: '✉' },
+  { id: 'dashboard', label: 'Dashboard', icon: '◈', color: '#2ED6E5' },
+  { id: 'training', label: 'Training Chat', icon: '◉', color: '#FFB700' },
+  { id: 'upload', label: 'Upload', icon: '↑', color: '#1ABEFF' },
+  { id: 'changelog', label: 'Changelog', icon: '△', color: '#FFAB1A' },
+  { id: 'describe', label: 'Describe', icon: '✎', color: '#7040FF' },
+  { id: 'entries', label: 'KB Browser', icon: '☰', color: '#F266FF' },
+  { id: 'bulk', label: 'Bulk Import', icon: '⤓', color: '#1ABEFF' },
+  { id: 'autofetch', label: 'Auto-Fetch', icon: '⟳', color: '#3AE556' },
+  { id: 'tests', label: 'Test Runner', icon: '✓', color: '#3AE556' },
+  { id: 'tickets', label: 'Tickets', icon: '✉', color: '#E53A3A' },
 ];
 
 export default function AdminPage() {
@@ -144,10 +144,11 @@ export default function AdminPage() {
             role="button"
             tabIndex={0}
             className={`sidebar-link ${activeTab === tab.id ? 'active' : ''}`}
+            style={activeTab === tab.id ? { color: tab.color, borderLeftColor: tab.color } : undefined}
             onClick={() => { setActiveTab(tab.id); setSidebarOpen(false); }}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveTab(tab.id); setSidebarOpen(false); } }}
           >
-            <span style={{ width: 16, textAlign: 'center', fontSize: 14 }}>{tab.icon}</span>
+            <span style={{ width: 16, textAlign: 'center', fontSize: 14, color: tab.color }}>{tab.icon}</span>
             {tab.label}
             {tab.id === 'entries' && <span className="badge badge-default" style={{ marginLeft: 'auto' }}>{entryCount}</span>}
           </div>
