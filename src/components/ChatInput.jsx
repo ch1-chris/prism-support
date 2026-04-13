@@ -1,22 +1,36 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 
-export default function ChatInput({ onSend, disabled }) {
+export default function ChatInput({ onSend, disabled, file, onClearFile }) {
   const [value, setValue] = useState('');
+
+  const previewUrl = useMemo(() => file ? URL.createObjectURL(file) : null, [file]);
 
   function handleSubmit(e) {
     e.preventDefault();
-    if (!value.trim() || disabled) return;
-    onSend(value.trim());
+    if ((!value.trim() && !file) || disabled) return;
+    onSend({ text: value.trim(), file });
     setValue('');
+    if (onClearFile) onClearFile();
   }
 
   return (
     <div className="chat-input-bar">
+      {file && previewUrl && (
+        <div className="chat-attach-preview">
+          <img src={previewUrl} alt="Attached screenshot" className="chat-attach-thumb" />
+          <button
+            className="chat-attach-remove"
+            onClick={onClearFile}
+            type="button"
+            aria-label="Remove attachment"
+          >×</button>
+        </div>
+      )}
       <form className="chat-input-form" onSubmit={handleSubmit}>
         <input
           type="text"
           className="chat-input-field"
-          placeholder="Ask a question…"
+          placeholder={file ? 'Add a question about this screenshot…' : 'Ask a question…'}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           disabled={disabled}
@@ -25,7 +39,7 @@ export default function ChatInput({ onSend, disabled }) {
         />
         <button
           className="chat-send-btn"
-          disabled={disabled || !value.trim()}
+          disabled={disabled || (!value.trim() && !file)}
           type="submit"
           aria-label="Send message"
         >

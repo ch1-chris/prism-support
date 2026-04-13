@@ -43,7 +43,10 @@ export default function ChatPage() {
   const [sessionId] = useState(getSessionId);
   const [loaded, setLoaded] = useState(false);
   const [escalating, setEscalating] = useState(false);
+  const [attachedFile, setAttachedFile] = useState(null);
+  const [dragging, setDragging] = useState(false);
   const chatEndRef = useRef();
+  const dragCounter = useRef(0);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -60,15 +63,60 @@ export default function ChatPage() {
     init();
   }, [sessionId]);
 
-  const sendMessage = useCallback(async (text) => {
+  function attachImage(file) {
+    if (file && file.type.startsWith('image/')) {
+      setAttachedFile(file);
+    }
+  }
+
+  function handleDragEnter(e) {
+    e.preventDefault();
+    dragCounter.current++;
+    if (dragCounter.current === 1) setDragging(true);
+  }
+
+  function handleDragLeave(e) {
+    e.preventDefault();
+    dragCounter.current--;
+    if (dragCounter.current <= 0) { dragCounter.current = 0; setDragging(false); }
+  }
+
+  function handleDragOver(e) { e.preventDefault(); }
+
+  function handleDrop(e) {
+    e.preventDefault();
+    dragCounter.current = 0;
+    setDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) attachImage(file);
+  }
+
+  function handlePaste(e) {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        attachImage(item.getAsFile());
+        return;
+      }
+    }
+  }
+
+  const sendMessage = useCallback(async (textOrObj) => {
+    const text = typeof textOrObj === 'string' ? textOrObj : textOrObj.text;
+    const file = typeof textOrObj === 'string' ? attachedFile : textOrObj.file;
+
     const userMsg = { role: 'user', content: text };
+    if (file) userMsg.imageUrl = URL.createObjectURL(file);
     setMessages((prev) => [...prev, userMsg]);
+    setAttachedFile(null);
     setStreaming(true);
     setStreamText('');
     setFollowUps([]);
 
     try {
-      const response = await chat.stream(text, sessionId, version, language);
+      const response = await chat.stream(text, sessionId, version, language, file);
 
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
@@ -178,7 +226,26 @@ export default function ChatPage() {
   const showOnboarding = loaded && messages.length === 0;
 
   return (
-    <div className="chat-page">
+    <div
+      className="chat-page"
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+      onPaste={handlePaste}
+    >
+      {dragging && (
+        <div className="chat-drop-overlay">
+          <div className="chat-drop-overlay-inner">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <rect x="3" y="3" width="18" height="18" rx="4" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <path d="m21 15-5-5L5 21" />
+            </svg>
+            <span>Drop screenshot here</span>
+          </div>
+        </div>
+      )}
       <header className="chat-topbar">
         <div className="chat-topbar-inner">
           <div className="chat-brand">
@@ -227,7 +294,7 @@ export default function ChatPage() {
               ))}
             </div>
 
-            <ChatInput onSend={sendMessage} disabled={streaming || escalating} />
+            <ChatInput onSend={sendMessage} disabled={streaming || escalating} file={attachedFile} onClearFile={() => setAttachedFile(null)} />
           </div>
         </div>
       ) : (
@@ -271,7 +338,7 @@ export default function ChatPage() {
             </div>
           </div>
 
-          <ChatInput onSend={sendMessage} disabled={streaming || escalating} />
+          <ChatInput onSend={sendMessage} disabled={streaming || escalating} file={attachedFile} onClearFile={() => setAttachedFile(null)} />
         </>
       )}
     </div>

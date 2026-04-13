@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { supabase } from '../db.js';
 import { semanticSearch } from '../embeddings.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
+import { upload } from '../upload.js';
 
 const router = Router();
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -49,10 +50,12 @@ ${kbSection}`;
 }
 
 // --- Stream chat ---
-router.post('/stream', asyncHandler(async (req, res) => {
+router.post('/stream', upload.single('file'), asyncHandler(async (req, res) => {
   const { message, sessionId, version, language } = req.body;
   if (!message?.trim()) throw new Error('Message is required');
   if (!sessionId) throw new Error('Session ID is required');
+
+  const imageFile = req.file;
 
   const { data: existingSession, error: lookupError } = await supabase
     .from('chat_sessions')
@@ -97,6 +100,23 @@ router.post('/stream', asyncHandler(async (req, res) => {
     role: m.role,
     content: m.content,
   }));
+
+  if (imageFile && messages.length > 0) {
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg.role === 'user') {
+      lastMsg.content = [
+        {
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: imageFile.mimetype,
+            data: imageFile.buffer.toString('base64'),
+          },
+        },
+        { type: 'text', text: lastMsg.content },
+      ];
+    }
+  }
 
   const systemPrompt = buildSystemPrompt(kbEntries, language);
 

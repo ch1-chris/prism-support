@@ -79,7 +79,16 @@ export const kb = {
 
 // --- Chat ---
 export const chat = {
-  stream: (message, sessionId, version, language) => {
+  stream: (message, sessionId, version, language, file) => {
+    if (file) {
+      const formData = new FormData();
+      formData.append('message', message);
+      formData.append('sessionId', sessionId);
+      formData.append('version', version);
+      formData.append('language', language);
+      formData.append('file', file);
+      return fetch('/api/chat/stream', { method: 'POST', credentials: 'include', body: formData });
+    }
     return fetch('/api/chat/stream', {
       method: 'POST',
       credentials: 'include',

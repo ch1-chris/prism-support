@@ -18,7 +18,10 @@ export default function ChatMessage({ msg, onEscalate }) {
   if (msg.role === 'user') {
     return (
       <div className="chat-msg chat-msg-user">
-        <div className="chat-msg-bubble chat-msg-bubble-user">{msg.content}</div>
+        <div className="chat-msg-bubble chat-msg-bubble-user">
+          {msg.imageUrl && <img src={msg.imageUrl} alt="Attached screenshot" className="chat-user-image" />}
+          {msg.content}
+        </div>
         <div className="chat-msg-avatar chat-msg-avatar-user">You</div>
       </div>
     );
