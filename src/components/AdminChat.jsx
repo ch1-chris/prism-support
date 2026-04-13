@@ -261,39 +261,48 @@ export default function AdminChat() {
         )}
 
         {messages.map((msg, i) => (
-          <div key={i} style={msg.role === 'user' ? { alignSelf: 'flex-end', maxWidth: '85%' } : undefined}>
-            {msg.previews?.length > 0 && (
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6, justifyContent: 'flex-end' }}>
-                {msg.previews.map((p, j) => (
-                  p.url ? (
-                    <img
-                      key={j}
-                      src={p.url}
-                      alt={p.name}
-                      style={{ maxWidth: 200, maxHeight: 150, borderRadius: 8, border: '1px solid var(--border)', objectFit: 'cover' }}
-                    />
-                  ) : (
-                    <span key={j} className="badge badge-default" style={{ fontSize: 11 }}>{p.name}</span>
-                  )
-                ))}
-              </div>
+          <div key={i} className={`admin-chat-msg ${msg.role === 'user' ? 'admin-chat-msg-user' : 'admin-chat-msg-ai'}`}>
+            {msg.role === 'user' ? (
+              <>
+                <div className="admin-chat-content">
+                  {msg.previews?.length > 0 && (
+                    <div className="admin-chat-previews">
+                      {msg.previews.map((p, j) => (
+                        p.url ? (
+                          <img key={j} src={p.url} alt={p.name} className="admin-chat-preview-img" />
+                        ) : (
+                          <span key={j} className="badge badge-default" style={{ fontSize: 11 }}>{p.name}</span>
+                        )
+                      ))}
+                    </div>
+                  )}
+                  <div className="admin-chat-bubble admin-chat-bubble-user">{msg.content}</div>
+                </div>
+                <div className="admin-chat-avatar admin-chat-avatar-user">You</div>
+              </>
+            ) : (
+              <>
+                <div className="admin-chat-avatar admin-chat-avatar-ai">◈</div>
+                <div className="admin-chat-bubble admin-chat-bubble-ai">
+                  <Markdown>{msg.content}</Markdown>
+                </div>
+              </>
             )}
-            <div className={`msg ${msg.role === 'user' ? 'msg-user' : 'msg-assistant'}`}>
-              {msg.role === 'assistant' ? <Markdown>{msg.content}</Markdown> : msg.content}
-            </div>
           </div>
         ))}
 
         {streaming && (
-          <>
+          <div className="admin-chat-msg admin-chat-msg-ai">
+            <div className="admin-chat-avatar admin-chat-avatar-ai">◈</div>
             {streamText ? (
-              <div className="msg msg-assistant"><Markdown>{streamText}</Markdown></div>
+              <div className="admin-chat-bubble admin-chat-bubble-ai"><Markdown>{streamText}</Markdown></div>
             ) : (
-              <div className="msg-thinking">
-                <div className="spinner" /> Thinking…
+              <div className="chat-msg-thinking">
+                <div className="chat-thinking-dots"><span /><span /><span /></div>
+                Thinking…
               </div>
             )}
-          </>
+          </div>
         )}
 
         <div ref={chatEndRef} />
