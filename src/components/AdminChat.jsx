@@ -47,6 +47,12 @@ export default function AdminChat() {
 
     try {
       const response = await adminChat.stream(text, filesToSend.length ? filesToSend : null);
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || `Request failed (${response.status})`);
+      }
+
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let fullText = '';
