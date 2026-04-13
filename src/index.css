@@ -507,6 +507,37 @@ label {
 .source-description { background: #F0E8FF; color: var(--section-writers); }
 .source-voice_note { background: #FFE8FC; color: var(--section-library); }
 .source-bulk_import { background: #E8F8FF; color: var(--section-distribution); }
+.source-tutorial_video { background: #FFF2E5; color: var(--prism-orange); }
+
+/* === Video Progress === */
+.video-progress-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+}
+
+.video-progress-track {
+  flex: 1;
+  height: 6px;
+  background: var(--grey-200);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.video-progress-fill {
+  height: 100%;
+  background: var(--prism-orange);
+  border-radius: var(--radius-full);
+  transition: width 0.4s ease;
+}
+
+.video-progress-label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
 
 /* === KB Entry === */
 

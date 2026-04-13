@@ -60,6 +60,12 @@ export const kb = {
   fetchChangelog: (url) =>
     request('/api/kb/fetch-changelog', { method: 'POST', body: JSON.stringify({ url }) }),
 
+  processVideo: (formData) => fetch('/api/kb/process-video', {
+    method: 'POST',
+    credentials: 'include',
+    body: formData,
+  }),
+
   checkStaleness: () =>
     request('/api/kb/check-staleness', { method: 'POST' }),
 

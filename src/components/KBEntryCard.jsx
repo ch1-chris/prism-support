@@ -8,6 +8,7 @@ const SOURCE_LABELS = {
   description: 'DESC',
   voice_note: 'MIC',
   bulk_import: 'IMP',
+  tutorial_video: 'VID',
 };
 
 export default function KBEntryCard({ entry, onUpdate, onDelete }) {

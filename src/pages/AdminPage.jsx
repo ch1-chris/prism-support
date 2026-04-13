@@ -231,6 +231,7 @@ export default function AdminPage() {
                   <option value="description">Description</option>
                   <option value="voice_note">Voice note</option>
                   <option value="bulk_import">Bulk import</option>
+                  <option value="tutorial_video">Tutorial video</option>
                 </select>
                 <button
                   className={`btn btn-sm ${staleFilter ? 'btn-primary' : ''}`}

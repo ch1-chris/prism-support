@@ -1,9 +1,11 @@
 import { Router } from 'express';
+import { readFileSync, unlinkSync } from 'fs';
 import Anthropic from '@anthropic-ai/sdk';
 import { supabase } from '../db.js';
 import { embedAndStoreEntry } from '../embeddings.js';
-import { upload } from '../upload.js';
+import { upload, videoUpload } from '../upload.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
+import { extractFrames, readFrameAsBase64, getFramesForSegment, cleanupFrames, ensureTmpDir } from '../frames.js';
 
 const router = Router();
 
@@ -269,6 +271,180 @@ async function processTextFile(file, version) {
 
   await embedAndStoreEntry(data.id, `${data.title} ${data.content}`);
   return data;
+}
+
+// --- Process tutorial video (SSE) ---
+router.post('/process-video', videoUpload.single('file'), asyncHandler(async (req, res) => {
+  ensureTmpDir();
+  const file = req.file;
+  if (!file) throw new Error('No video file provided');
+  if (!process.env.ELEVENLABS_API_KEY) throw new Error('ELEVENLABS_API_KEY is required');
+
+  const version = req.body.version || 'latest';
+  const videoPath = file.path;
+  let framesDir = null;
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+
+  function send(event) {
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
+  }
+
+  try {
+    send({ type: 'progress', step: 'starting', message: 'Starting video processing...' });
+
+    // Step 1: parallel transcription + frame extraction
+    send({ type: 'progress', step: 'transcribing', message: 'Transcribing audio and extracting frames...' });
+
+    const videoBuffer = readFileSync(videoPath);
+
+    const [transcription, frameResult] = await Promise.all([
+      transcribeVideo(videoBuffer, file.mimetype),
+      extractFrames(videoPath),
+    ]);
+
+    framesDir = frameResult.outDir;
+    const allFrames = frameResult.frames;
+    const transcript = transcription.text;
+
+    send({ type: 'progress', step: 'transcribed', message: `Transcribed ${transcript.length} characters, extracted ${allFrames.length} frames` });
+
+    // Step 2: upload video to storage
+    send({ type: 'progress', step: 'uploading', message: 'Uploading video to storage...' });
+    const storagePath = `media/${Date.now()}-${file.originalname}`;
+    const { error: uploadError } = await supabase.storage
+      .from('helpbot-uploads')
+      .upload(storagePath, videoBuffer, { contentType: file.mimetype });
+    if (uploadError) throw new Error(`Storage upload failed: ${uploadError.message}`);
+
+    const { data: urlData } = supabase.storage
+      .from('helpbot-uploads')
+      .getPublicUrl(storagePath);
+    const fileUrl = urlData.publicUrl;
+
+    // Step 3: segment transcript into topics
+    send({ type: 'progress', step: 'segmenting', message: 'Identifying topics in the video...' });
+
+    const segmentResponse = await anthropic.messages.create({
+      model: MODEL,
+      max_tokens: 4000,
+      messages: [{
+        role: 'user',
+        content: `This is a transcript of a tutorial video about a video editing application.
+Identify the distinct topics, features, or workflows demonstrated.
+Split the transcript into segments, one per topic.
+
+Return a JSON array where each element has:
+- "title": short topic title
+- "start_seconds": approximate start time in the video (based on position in transcript)
+- "end_seconds": approximate end time
+- "transcript": the relevant transcript text for that topic
+
+If the transcript only covers one topic, return a single-element array.
+Return ONLY valid JSON, no markdown fences.
+
+TRANSCRIPT:
+${transcript}`,
+      }],
+    });
+
+    const segments = JSON.parse(segmentResponse.content[0].text);
+    send({ type: 'progress', step: 'segmented', message: `Identified ${segments.length} topic${segments.length !== 1 ? 's' : ''}` });
+
+    // Step 4: structure each segment with vision
+    const entries = [];
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      send({
+        type: 'progress',
+        step: 'structuring',
+        message: `Analyzing topic ${i + 1} of ${segments.length}: ${seg.title}`,
+        current: i + 1,
+        total: segments.length,
+      });
+
+      const segFrames = getFramesForSegment(allFrames, seg.start_seconds, seg.end_seconds, 8);
+
+      const contentBlocks = [];
+      for (const frame of segFrames) {
+        const base64 = readFrameAsBase64(frame.path);
+        contentBlocks.push({
+          type: 'image',
+          source: { type: 'base64', media_type: 'image/jpeg', data: base64 },
+        });
+      }
+
+      const visionContext = segFrames.length > 0
+        ? `This is a segment from a tutorial video about a video editing application.
+Below are ${segFrames.length} screenshots from this segment alongside the transcript.
+Analyze BOTH the visual content (UI elements, menus, buttons, panels visible on screen) AND the spoken content to create a thorough documentation entry.
+Pay special attention to button labels, menu paths, panel layouts, and any UI details visible in the screenshots.`
+        : `This is a segment from a tutorial video about a video editing application.`;
+
+      contentBlocks.push({
+        type: 'text',
+        text: `${visionContext}
+
+TRANSCRIPT FOR THIS SEGMENT ("${seg.title}"):
+${seg.transcript}
+
+${STRUCTURED_PROMPT}`,
+      });
+
+      const structureResponse = await anthropic.messages.create({
+        model: MODEL,
+        max_tokens: 2000,
+        messages: [{ role: 'user', content: contentBlocks }],
+      });
+
+      const parsed = JSON.parse(structureResponse.content[0].text);
+
+      const { data, error } = await supabase
+        .from('kb_entries')
+        .insert({
+          ...parsed,
+          related_features: parsed.related_features || [],
+          source: 'tutorial_video',
+          version,
+          file_url: fileUrl,
+          updated_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+
+      if (error) throw new Error(`Failed to save entry: ${error.message}`);
+
+      await embedAndStoreEntry(data.id, `${data.title} ${data.content}`);
+      entries.push(data);
+      send({ type: 'entry', entry: data });
+    }
+
+    send({ type: 'done', count: entries.length });
+  } catch (err) {
+    send({ type: 'error', message: err.message });
+  } finally {
+    cleanupFrames(framesDir);
+    try { unlinkSync(videoPath); } catch { /* best-effort */ }
+    res.end();
+  }
+}));
+
+async function transcribeVideo(buffer, mimetype) {
+  const { ElevenLabsClient } = await import('@elevenlabs/elevenlabs-js');
+  const elevenlabs = new ElevenLabsClient({ apiKey: process.env.ELEVENLABS_API_KEY });
+
+  const blob = new Blob([buffer], { type: mimetype });
+  return elevenlabs.speechToText.convert({
+    file: blob,
+    model_id: 'scribe_v2',
+    tag_audio_events: true,
+    diarize: true,
+  });
 }
 
 // --- Process changelog ---
