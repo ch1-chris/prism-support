@@ -785,4 +785,56 @@ router.get('/meta/versions', asyncHandler(async (req, res) => {
   res.json(versions);
 }));
 
+// --- Cleanup expired uploaded files (5-day retention) ---
+
+const FILE_RETENTION_DAYS = 5;
+const BUCKET = 'helpbot-uploads';
+
+function extractStoragePath(fileUrl) {
+  const marker = `/object/public/${BUCKET}/`;
+  const idx = fileUrl.indexOf(marker);
+  if (idx === -1) return null;
+  return fileUrl.slice(idx + marker.length);
+}
+
+export async function cleanupExpiredFiles() {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - FILE_RETENTION_DAYS);
+
+  const { data: entries, error } = await supabase
+    .from('kb_entries')
+    .select('id, file_url')
+    .not('file_url', 'is', null)
+    .lt('created_at', cutoff.toISOString());
+
+  if (error) throw new Error(`Cleanup query failed: ${error.message}`);
+  if (!entries?.length) return { deleted: 0 };
+
+  const storagePaths = entries
+    .map((e) => extractStoragePath(e.file_url))
+    .filter(Boolean);
+
+  if (storagePaths.length > 0) {
+    const { error: removeError } = await supabase.storage
+      .from(BUCKET)
+      .remove(storagePaths);
+    if (removeError) throw new Error(`Storage cleanup failed: ${removeError.message}`);
+  }
+
+  const ids = entries.map((e) => e.id);
+  const { error: updateError } = await supabase
+    .from('kb_entries')
+    .update({ file_url: null })
+    .in('id', ids);
+  if (updateError) throw new Error(`Failed to clear file_url: ${updateError.message}`);
+
+  console.log(`[Cleanup] Deleted ${storagePaths.length} expired files from storage`);
+  return { deleted: storagePaths.length };
+}
+
+router.post('/cleanup-files', asyncHandler(async (_req, res) => {
+  const result = await cleanupExpiredFiles();
+  res.json(result);
+}));
+
 export default router;

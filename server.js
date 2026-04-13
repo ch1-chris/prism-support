@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 import authRoutes from './server/routes/auth.js';
-import kbRoutes from './server/routes/kb.js';
+import kbRoutes, { cleanupExpiredFiles } from './server/routes/kb.js';
 import chatRoutes from './server/routes/chat.js';
 import analyticsRoutes from './server/routes/analytics.js';
 import adminChatRoutes from './server/routes/admin-chat.js';
@@ -101,4 +101,11 @@ app.listen(PORT, () => {
     console.log(`  API: http://localhost:${PORT}`);
     console.log(`  UI:  http://localhost:5173`);
   }
+
+  // Run file cleanup on startup and every 24 hours
+  const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+  cleanupExpiredFiles().catch((err) => console.error('[Cleanup] Startup run failed:', err.message));
+  setInterval(() => {
+    cleanupExpiredFiles().catch((err) => console.error('[Cleanup] Scheduled run failed:', err.message));
+  }, CLEANUP_INTERVAL_MS);
 });
