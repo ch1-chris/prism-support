@@ -295,8 +295,8 @@ async function processAudioVideo(file, version) {
   const audioBlob = new Blob([file.buffer], { type: file.mimetype });
   const transcription = await elevenlabs.speechToText.convert({
     file: audioBlob,
-    model_id: 'scribe_v2',
-    tag_audio_events: true,
+    modelId: 'scribe_v2',
+    tagAudioEvents: true,
     diarize: true,
   });
 
@@ -485,8 +485,8 @@ async function transcribeVideo(buffer, mimetype) {
   const blob = new Blob([buffer], { type: mimetype });
   return elevenlabs.speechToText.convert({
     file: blob,
-    model_id: 'scribe_v2',
-    tag_audio_events: true,
+    modelId: 'scribe_v2',
+    tagAudioEvents: true,
     diarize: true,
   });
 }
