@@ -18,6 +18,7 @@ function buildSystemPrompt(kbEntries, language) {
         if (e.keyboard_shortcut) block += `\nShortcut: ${e.keyboard_shortcut}`;
         block += `\n${e.content}`;
         if (e.common_issues) block += `\nCommon issues: ${e.common_issues}`;
+        if (e.file_url) block += `\nScreenshot: ${e.file_url}`;
         return block;
       }).join('\n\n---\n\n')
     : 'No knowledge base entries available yet.';
@@ -34,6 +35,7 @@ RULES:
 - If the answer is NOT in the knowledge base, say explicitly: "I don't have information about that in my current knowledge base. You may want to check the latest documentation or contact our support team."
 - When you're uncertain, say so clearly rather than guessing.
 - Keep answers concise and practical.
+- When a knowledge base entry includes a Screenshot URL and the visual would help the user locate a button, menu, or UI element, embed it using markdown image syntax: ![description](url). Only include images when they add clarity — do not include them for every answer.
 - After your answer, generate 2-3 relevant follow-up questions the user might ask.
 
 FORMAT:

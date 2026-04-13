@@ -998,6 +998,15 @@ label {
   margin: 12px 0;
 }
 
+.chat-msg-bubble-ai img,
+.msg-assistant img,
+.admin-chat-bubble-ai img {
+  max-width: 100%;
+  border-radius: var(--radius-sm);
+  margin: 8px 0;
+  display: block;
+}
+
 /* --- Message Actions --- */
 
 .chat-msg-actions {

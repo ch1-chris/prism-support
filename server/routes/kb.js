@@ -839,7 +839,10 @@ export async function cleanupExpiredFiles() {
   if (error) throw new Error(`Cleanup query failed: ${error.message}`);
   if (!entries?.length) return { deleted: 0 };
 
-  const storagePaths = entries
+  const cleanable = entries.filter((e) => !e.file_url.includes('/images/'));
+  if (!cleanable.length) return { deleted: 0, skipped: entries.length };
+
+  const storagePaths = cleanable
     .map((e) => extractStoragePath(e.file_url))
     .filter(Boolean);
 
@@ -850,7 +853,7 @@ export async function cleanupExpiredFiles() {
     if (removeError) throw new Error(`Storage cleanup failed: ${removeError.message}`);
   }
 
-  const ids = entries.map((e) => e.id);
+  const ids = cleanable.map((e) => e.id);
   const { error: updateError } = await supabase
     .from('kb_entries')
     .update({ file_url: null })
