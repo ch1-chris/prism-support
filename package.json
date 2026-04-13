@@ -25,8 +25,7 @@
     "multer": "^2.1.1",
     "pg": "^8.20.0",
     "react-markdown": "^10.1.0",
-    "uuid": "^13.0.0",
-    "voyageai": "^0.2.1"
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.0.1",

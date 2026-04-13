@@ -1,7 +1,7 @@
 import { supabase } from './db.js';
 
-let voyageClient = null;
-const EMBEDDING_ENABLED = !!process.env.VOYAGE_API_KEY;
+const VOYAGE_API_KEY = process.env.VOYAGE_API_KEY;
+const EMBEDDING_ENABLED = !!VOYAGE_API_KEY;
 
 if (EMBEDDING_ENABLED) {
   console.log('[Embeddings] Voyage AI semantic search enabled');
@@ -9,24 +9,24 @@ if (EMBEDDING_ENABLED) {
   console.log('[Embeddings] Voyage AI not configured — using PostgreSQL full-text search only');
 }
 
-async function getVoyageClient() {
-  if (!EMBEDDING_ENABLED) return null;
-  if (voyageClient) return voyageClient;
-
-  const { VoyageAIClient } = await import('voyageai');
-  voyageClient = new VoyageAIClient({ apiKey: process.env.VOYAGE_API_KEY });
-  return voyageClient;
-}
-
 export async function generateEmbedding(text) {
-  const client = await getVoyageClient();
-  if (!client) return null;
+  if (!EMBEDDING_ENABLED) return null;
 
-  const result = await client.embed({
-    input: [text],
-    model: 'voyage-3',
+  const response = await fetch('https://api.voyageai.com/v1/embeddings', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${VOYAGE_API_KEY}`,
+    },
+    body: JSON.stringify({ input: [text], model: 'voyage-3' }),
   });
 
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`Voyage AI embedding failed (${response.status}): ${body}`);
+  }
+
+  const result = await response.json();
   return result.data[0].embedding;
 }
 
