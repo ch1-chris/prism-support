@@ -35,7 +35,7 @@ export default function ChatMessage({ msg, onEscalate }) {
     <div className="chat-msg chat-msg-assistant">
       <img src="/prism-logo.png" alt="Prism" className="chat-msg-avatar chat-msg-avatar-ai" />
       <div>
-        <div className="chat-msg-bubble chat-msg-bubble-ai"><Markdown>{msg.content}</Markdown></div>
+        <div className="chat-msg-bubble chat-msg-bubble-ai"><Markdown>{(msg.content || '').replace(/<!--followups:\[.*?\]-->/s, '').trim()}</Markdown></div>
         <div className="chat-msg-actions">
           <button
             className={`chat-action-btn ${feedback === 1 ? 'active-up' : ''}`}
