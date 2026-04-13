@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HelpBot Admin</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,sans-serif;font-size:15px;color:#111;background:#f4f4f2;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+.shell{display:flex;height:640px;width:100%;max-width:900px;border:0.5px solid #ddd;border-radius:12px;overflow:hidden;background:#fff;box-shadow:0 2px 16px rgba(0,0,0,0.08)}
+.sidebar{width:190px;min-width:190px;border-right:0.5px solid #ddd;display:flex;flex-direction:column;background:#f7f7f5}
+.sidebar-logo{padding:16px;font-size:13px;font-weight:500;color:#666;border-bottom:0.5px solid #ddd}
+.sidebar-logo span{color:#111}
+.nav-item{padding:10px 16px;font-size:13px;cursor:pointer;color:#666;border-left:2px solid transparent}
+.nav-item:hover{color:#111;background:#fff}
+.nav-item.active{color:#111;border-left-color:#111;background:#fff;font-weight:500}
+.nav-section{padding:16px 16px 6px;font-size:11px;font-weight:500;color:#999;text-transform:uppercase;letter-spacing:0.05em}
+.kb-count{margin-top:auto;padding:12px 16px;font-size:12px;color:#999;border-top:0.5px solid #ddd}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.main-header{padding:14px 20px;border-bottom:0.5px solid #ddd;font-size:14px;font-weight:500;display:flex;align-items:center;gap:10px;min-height:50px}
+.badge{font-size:11px;font-weight:400;padding:2px 8px;border-radius:20px;background:#e6f1fb;color:#185fa5}
+.badge-warn{background:#fcebeb;color:#a32d2d}
+.content{flex:1;overflow-y:auto;padding:20px}
+.tabs{display:flex;gap:0;border-bottom:0.5px solid #ddd;margin-bottom:20px}
+.tab{padding:8px 16px;font-size:13px;cursor:pointer;color:#666;border-bottom:2px solid transparent;margin-bottom:-0.5px}
+.tab.active{color:#111;border-bottom-color:#111;font-weight:500}
+.tab:hover:not(.active){color:#111}
+label{font-size:13px;color:#666;display:block;margin-bottom:6px}
+input[type=text],textarea{width:100%;padding:8px 10px;font-size:14px;border:0.5px solid #ccc;border-radius:8px;background:#fff;color:#111;font-family:inherit;outline:none}
+input[type=text]:focus,textarea:focus{border-color:#999;box-shadow:0 0 0 2px rgba(0,0,0,0.05)}
+textarea{resize:vertical;line-height:1.5}
+.btn{padding:8px 16px;font-size:13px;border:0.5px solid #ccc;border-radius:8px;background:#fff;color:#111;cursor:pointer;font-family:inherit}
+.btn:hover{background:#f7f7f5}
+.btn:active{transform:scale(0.98)}
+.btn-primary{background:#111;color:#fff;border-color:#111}
+.btn-primary:hover{opacity:0.85}
+.btn-primary:disabled{opacity:0.4;cursor:not-allowed}
+.btn-sm{padding:5px 10px;font-size:12px}
+.btn-danger{color:#a32d2d;border-color:#f09595}
+.btn-danger:hover{background:#fcebeb}
+.upload-zone{border:1.5px dashed #ccc;border-radius:12px;padding:32px;text-align:center;cursor:pointer;background:#f7f7f5}
+.upload-zone:hover{border-color:#111;background:#fff}
+.upload-zone p{font-size:13px;color:#666;margin-top:8px}
+.upload-zone strong{font-size:14px;font-weight:500}
+.source-icon{width:18px;height:18px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:500;flex-shrink:0}
+.source-img{background:#e6f1fb;color:#185fa5}
+.source-txt{background:#eaf3de;color:#3b6d11}
+.source-desc{background:#faeeda;color:#854f0b}
+.source-log{background:#f1efe8;color:#5f5e5a}
+.kb-entry{border:0.5px solid #ddd;border-radius:8px;padding:12px;margin-bottom:8px;background:#fff}
+.kb-entry-header{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.kb-entry-title{font-size:13px;font-weight:500;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kb-entry-preview{font-size:12px;color:#666;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.status-bar{padding:10px 20px;font-size:12px;display:flex;align-items:center;gap:8px;border-top:0.5px solid #ddd;min-height:40px;background:#f7f7f5}
+.spinner{width:12px;height:12px;border:1.5px solid #ccc;border-top-color:#111;border-radius:50%;animation:spin 0.7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.chat-messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.msg{max-width:85%;padding:10px 14px;border-radius:12px;font-size:14px;line-height:1.6;white-space:pre-wrap}
+.msg-user{align-self:flex-end;background:#111;color:#fff;border-bottom-right-radius:4px}
+.msg-assistant{align-self:flex-start;background:#f7f7f5;border-bottom-left-radius:4px;border:0.5px solid #ddd}
+.msg-thinking{align-self:flex-start;color:#999;font-size:13px;display:flex;align-items:center;gap:8px}
+.chat-input-row{padding:12px;border-top:0.5px solid #ddd;display:flex;gap:8px}
+.chat-input-row input{flex:1}
+.empty-state{text-align:center;padding:40px 20px;color:#999;font-size:13px}
+.info-box{background:#e6f1fb;border-radius:8px;padding:10px 14px;font-size:12px;color:#185fa5;line-height:1.5;margin-bottom:16px}
+.api-warning{background:#faeeda;border-radius:8px;padding:10px 14px;font-size:12px;color:#854f0b;line-height:1.5;margin-bottom:16px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useRef,useEffect}=React;
+const API="https://api.anthropic.com/v1/messages";
+const MODEL="claude-sonnet-4-20250514";
+
+// ⚠️ IMPORTANT: Replace with your API key, or wire up a backend proxy
+// Never expose a real API key in a client-side file for production use
+const API_KEY = "YOUR_API_KEY_HERE";
+
+async function claude(messages,system="",imageContent=null){
+  const msgs=imageContent?[{role:"user",content:imageContent}]:messages;
+  const r=await fetch(API,{
+    method:"POST",
+    headers:{"Content-Type":"application/json","x-api-key":API_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+    body:JSON.stringify({model:MODEL,max_tokens:1000,system,messages:msgs})
+  });
+  const d=await r.json();
+  if(d.error)throw new Error(d.error.message);
+  return d.content?.[0]?.text||"";
+}
+
+function readBase64(file){
+  return new Promise((res,rej)=>{
+    const r=new FileReader();
+    r.onload=()=>res(r.result.split(",")[1]);
+    r.onerror=()=>rej(new Error("Read failed"));
+    r.readAsDataURL(file);
+  });
+}
+
+function SourceIcon({source}){
+  let cls="source-log",label="CH";
+  if(source==="image upload"){cls="source-img";label="IMG";}
+  else if(source==="text file"){cls="source-txt";label="TXT";}
+  else if(source==="developer description"||source==="voice note"){cls="source-desc";label="DESC";}
+  return <span className={`source-icon ${cls}`}>{label}</span>;
+}
+
+const STORAGE_KEY="vehelpbot-kb";
+
+function loadKbFromStorage(){
+  try{const v=localStorage.getItem(STORAGE_KEY);return v?JSON.parse(v):[];}
+  catch{return [];}
+}
+
+function saveKbToStorage(kb){
+  try{localStorage.setItem(STORAGE_KEY,JSON.stringify(kb));}catch{}
+}
+
+function App(){
+  const [view,setView]=useState("admin");
+  const [adminTab,setAdminTab]=useState("upload");
+  const [kb,setKb]=useState(loadKbFromStorage);
+  const [chat,setChat]=useState([]);
+  const [chatInput,setChatInput]=useState("");
+  const [busy,setBusy]=useState(false);
+  const [status,setStatus]=useState("");
+  const [changelogText,setChangelogText]=useState("");
+  const [descText,setDescText]=useState("");
+  const [expandedId,setExpandedId]=useState(null);
+  const fileRef=useRef();
+  const chatEndRef=useRef();
+
+  useEffect(()=>{chatEndRef.current?.scrollIntoView({behavior:"smooth"});},[chat]);
+
+  function updateKb(newKb){
+    setKb(newKb);
+    saveKbToStorage(newKb);
+  }
+
+  async function addEntry(entry){
+    const newKb=[...kb,{...entry,id:Date.now(),createdAt:new Date().toLocaleDateString()}];
+    updateKb(newKb);
+    return newKb;
+  }
+
+  function setMsg(m,dur=3000){
+    setStatus(m);
+    if(dur)setTimeout(()=>setStatus(""),dur);
+  }
+
+  async function handleFiles(e){
+    const files=Array.from(e.target.files);
+    if(!files.length)return;
+    setBusy(true);
+    for(const file of files){
+      setStatus(`Processing ${file.name}…`);
+      try{
+        if(file.type.startsWith("image/")){
+          const b64=await readBase64(file);
+          const content=[
+            {type:"image",source:{type:"base64",media_type:file.type,data:b64}},
+            {type:"text",text:"This is a screenshot from a video editing app. Extract all visible UI elements, button locations, labels, panel names, and any instructional text. Write a structured knowledge base entry (with a clear title and organized sections) that a help chatbot could use to answer user questions about what's shown."}
+          ];
+          const text=await claude(null,"",content);
+          await addEntry({title:file.name,content:text,source:"image upload"});
+        } else if(file.type==="text/plain"||file.name.endsWith(".md")||file.name.endsWith(".txt")){
+          const raw=await file.text();
+          const text=await claude([{role:"user",content:`Convert this file into a structured knowledge base entry for a video editing app help chatbot. Be clear and organized:\n\n${raw.slice(0,4000)}`}]);
+          await addEntry({title:file.name,content:text,source:"text file"});
+        } else if(file.type.startsWith("audio/")||file.type.startsWith("video/")){
+          await addEntry({title:file.name,content:`[Media file: ${file.name}]\n\nThis file was uploaded but needs a description. Go to the Describe tab and explain what this recording covers.`,source:"voice note"});
+          setMsg(`${file.name} saved — add a description in the Describe tab`,5000);
+        } else {
+          setMsg(`${file.name}: unsupported type, skipped`);
+        }
+        setMsg(`Added: ${file.name}`,3000);
+      } catch(err){setMsg("Error: "+err.message,5000);}
+    }
+    setBusy(false);
+    fileRef.current.value="";
+  }
+
+  async function handleChangelog(){
+    if(!changelogText.trim())return;
+    setBusy(true);setStatus("Processing changelog…");
+    try{
+      const text=await claude([{role:"user",content:`These are release notes or a changelog for a video editing app. Extract and structure all feature changes, UI changes (button locations, renamed items, new panels), and new functionality into a clear knowledge base entry a help chatbot can use:\n\n${changelogText.slice(0,4000)}`}]);
+      const title="Changelog — "+new Date().toLocaleDateString();
+      await addEntry({title,content:text,source:"changelog"});
+      setChangelogText("");
+      setMsg("Changelog ingested",3000);
+    } catch(err){setMsg("Error: "+err.message,5000);}
+    setBusy(false);
+  }
+
+  async function handleDescribe(){
+    if(!descText.trim())return;
+    setBusy(true);setStatus("Processing…");
+    try{
+      const text=await claude([{role:"user",content:`A developer has described a change, feature, or note for their video editing app in plain language. Convert this into a structured, clear knowledge base entry for a help chatbot. Include: what it is, where to find it, how to use it:\n\n${descText}`}]);
+      const title=descText.slice(0,70)+(descText.length>70?"…":"");
+      await addEntry({title,content:text,source:"developer description"});
+      setDescText("");
+      setMsg("Entry added",3000);
+    } catch(err){setMsg("Error: "+err.message,5000);}
+    setBusy(false);
+  }
+
+  async function handleChat(){
+    if(!chatInput.trim()||busy)return;
+    const userMsg=chatInput.trim();
+    setChatInput("");
+    const newChat=[...chat,{role:"user",content:userMsg}];
+    setChat(newChat);
+    setBusy(true);
+    const kbCtx=kb.length?kb.map(e=>`### ${e.title}\n${e.content}`).join("\n\n---\n\n"):"No knowledge base entries have been added yet.";
+    const system=`You are a helpful support assistant for a video editing app. Answer user questions based only on the knowledge base below. Be specific about where buttons and features are located. If the answer isn't in the knowledge base, say so clearly and suggest they check the latest docs or contact support. Keep answers concise and practical.\n\nKNOWLEDGE BASE:\n${kbCtx}`;
+    try{
+      const reply=await claude(newChat,system);
+      setChat([...newChat,{role:"assistant",content:reply}]);
+    } catch(err){
+      setChat([...newChat,{role:"assistant",content:"Sorry, I hit an error: "+err.message}]);
+    }
+    setBusy(false);
+  }
+
+  const tabs=[
+    {id:"upload",label:"Upload files"},
+    {id:"changelog",label:"Changelog"},
+    {id:"describe",label:"Describe"},
+    {id:"entries",label:`KB (${kb.length})`},
+  ];
+
+  return(
+    <div className="shell">
+      <div className="sidebar">
+        <div className="sidebar-logo"><span>HelpBot</span> admin</div>
+        <div className="nav-section">Views</div>
+        <div className={`nav-item${view==="admin"?" active":""}`} onClick={()=>setView("admin")}>Admin panel</div>
+        <div className={`nav-item${view==="chat"?" active":""}`} onClick={()=>setView("chat")}>User chatbot</div>
+        <div className="kb-count">{kb.length} knowledge base {kb.length===1?"entry":"entries"}</div>
+      </div>
+
+      <div className="main">
+        {view==="admin"?(
+          <>
+            <div className="main-header">
+              Admin panel
+              <span className="badge">{kb.length} entries</span>
+            </div>
+            <div className="content">
+              <div className="api-warning">
+                ⚠️ Replace <strong>YOUR_API_KEY_HERE</strong> at the top of this file with your Anthropic API key before use. For production, route calls through a backend proxy instead.
+              </div>
+              <div className="tabs">
+                {tabs.map(t=>(
+                  <div key={t.id} className={`tab${adminTab===t.id?" active":""}`} onClick={()=>setAdminTab(t.id)}>{t.label}</div>
+                ))}
+              </div>
+
+              {adminTab==="upload"&&(
+                <div>
+                  <div className="info-box">Drop in screenshots, screen recordings, voice notes, text files, or markdown docs. Claude will read and extract knowledge from each one automatically.</div>
+                  <input ref={fileRef} type="file" multiple accept="image/*,audio/*,video/*,.txt,.md" style={{display:"none"}} onChange={handleFiles}/>
+                  <div className="upload-zone" onClick={()=>fileRef.current.click()}>
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#aaa" strokeWidth="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    <p><strong>Click to upload files</strong></p>
+                    <p>PNG, JPG, MP4, MOV, MP3, M4A, TXT, MD supported</p>
+                    <p style={{marginTop:6,fontSize:12,color:"#aaa"}}>Audio/video: file is saved, then describe it in the Describe tab</p>
+                  </div>
+                </div>
+              )}
+
+              {adminTab==="changelog"&&(
+                <div>
+                  <div className="info-box">Paste your release notes or changelog from GitHub, Notion, or anywhere. Claude will extract all UI changes and new features into structured knowledge base entries.</div>
+                  <label>Release notes / changelog</label>
+                  <textarea rows={10} value={changelogText} onChange={e=>setChangelogText(e.target.value)} placeholder={"v2.4.0 — April 2026\n\n- Moved Export button from top toolbar to File menu\n- Added Quick Export option (uses last export settings)\n- New Speed Ramp tool in the Effects panel\n- Timeline zoom now controlled by pinch gesture on trackpad\n- Fixed audio sync issue with imported MP4 files..."}/>
+                  <div style={{marginTop:10,display:"flex",justifyContent:"flex-end"}}>
+                    <button className="btn btn-primary" onClick={handleChangelog} disabled={busy||!changelogText.trim()}>Ingest changelog →</button>
+                  </div>
+                </div>
+              )}
+
+              {adminTab==="describe"&&(
+                <div>
+                  <div className="info-box">Describe a change, feature, or anything about your app in plain language. Works great for voice note transcripts too. Claude will turn it into a structured knowledge base entry.</div>
+                  <label>Describe in plain language</label>
+                  <textarea rows={7} value={descText} onChange={e=>setDescText(e.target.value)} placeholder={"e.g. \"I just moved the trim tool — it used to be in the toolbar but now it's in the right-click context menu when you select a clip. There's also a new keyboard shortcut, T, that activates it.\"\n\nOr paste a voice note transcript here."}/>
+                  <div style={{marginTop:10,display:"flex",justifyContent:"flex-end"}}>
+                    <button className="btn btn-primary" onClick={handleDescribe} disabled={busy||!descText.trim()}>Add to knowledge base →</button>
+                  </div>
+                </div>
+              )}
+
+              {adminTab==="entries"&&(
+                <div>
+                  {kb.length===0?(
+                    <div className="empty-state">
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ccc" strokeWidth="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                      <p style={{marginTop:8}}>No entries yet. Add files, changelogs, or descriptions.</p>
+                    </div>
+                  ):kb.map(entry=>(
+                    <div key={entry.id} className="kb-entry">
+                      <div className="kb-entry-header">
+                        <SourceIcon source={entry.source}/>
+                        <span className="kb-entry-title">{entry.title}</span>
+                        <span style={{fontSize:11,color:"#aaa",whiteSpace:"nowrap"}}>{entry.createdAt}</span>
+                        <button className="btn btn-sm" onClick={()=>setExpandedId(expandedId===entry.id?null:entry.id)}>{expandedId===entry.id?"Hide":"View"}</button>
+                        <button className="btn btn-sm btn-danger" onClick={()=>updateKb(kb.filter(e=>e.id!==entry.id))}>Del</button>
+                      </div>
+                      {expandedId===entry.id?(
+                        <div style={{fontSize:12,lineHeight:1.6,color:"#555",marginTop:8,whiteSpace:"pre-wrap",maxHeight:200,overflowY:"auto"}}>{entry.content}</div>
+                      ):(
+                        <div className="kb-entry-preview">{entry.content}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="status-bar">
+              {busy&&<div className="spinner"/>}
+              <span style={{color:"#666"}}>{status||"Ready"}</span>
+            </div>
+          </>
+        ):(
+          <>
+            <div className="main-header">
+              User chatbot
+              {kb.length>0
+                ?<span className="badge">Knows {kb.length} topics</span>
+                :<span className="badge badge-warn">No knowledge base — add entries in Admin first</span>
+              }
+            </div>
+            <div className="chat-messages">
+              {chat.length===0&&(
+                <div className="empty-state" style={{marginTop:40}}>
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ccc" strokeWidth="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+                  <p style={{marginTop:8}}>Ask anything about the app.</p>
+                  <p style={{marginTop:4,fontSize:12}}>Try: "Where is the export button?" or "How do I trim a clip?"</p>
+                </div>
+              )}
+              {chat.map((m,i)=>(
+                <div key={i} className={`msg ${m.role==="user"?"msg-user":"msg-assistant"}`}>{m.content}</div>
+              ))}
+              {busy&&<div className="msg-thinking"><div className="spinner"/>Thinking…</div>}
+              <div ref={chatEndRef}/>
+            </div>
+            <div className="chat-input-row">
+              <input type="text" placeholder="Ask about the app…" value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleChat()}/>
+              <button className="btn btn-primary" onClick={handleChat} disabled={busy||!chatInput.trim()}>Send</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
