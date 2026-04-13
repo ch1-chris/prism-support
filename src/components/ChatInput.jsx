@@ -49,6 +49,7 @@ export default function ChatInput({ onSend, disabled, file, onClearFile }) {
           </svg>
         </button>
       </form>
+      <p className="chat-input-hint">Tip: You can also drag and drop images or screenshots into this chat.</p>
     </div>
   );
 }
