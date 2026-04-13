@@ -1,5 +1,27 @@
 /* === Channel 1 / Prism Support — Design System === */
 
+@font-face {
+  font-family: 'ABC Diatype Variable';
+  src: url('/fonts/ABCDiatypeVariable.woff2') format('woff2'),
+       url('/fonts/ABCDiatypeVariable.woff') format('woff');
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'CoFo Sans Semi-Mono';
+  src: url('/fonts/CoFoSansSemi-Mono-Regular.otf') format('opentype');
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'CoFo Sans Semi-Mono';
+  src: url('/fonts/CoFoSansSemi-Mono-Medium.otf') format('opentype');
+  font-weight: 450;
+  font-display: swap;
+}
+
 :root {
   /* Neutrals (Grey Scale) */
   --grey-0: #FFFFFF;
@@ -69,12 +91,34 @@
   --shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
 
-  /* Typography — commercial fonts first, free fallbacks second */
+  /* Typography */
   --font-sans: 'ABC Diatype Variable', 'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono: 'CoFo Sans Semi-Mono VF Trial', 'JetBrains Mono', 'SF Mono', monospace;
+  --font-mono: 'CoFo Sans Semi-Mono', 'JetBrains Mono', 'SF Mono', monospace;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+.sidebar-brand,
+.sidebar-section,
+.sidebar-link,
+.sidebar-footer,
+.badge,
+.btn,
+.card-header,
+.tab,
+.upload-zone strong,
+.source-icon,
+.followup-pill,
+.onboarding-suggestion,
+.msg-thinking,
+.empty-state,
+.stat-card .stat-label,
+.login-card h1,
+.chat-header h1,
+.selectors-row select,
+label {
+  font-feature-settings: 'zero' 1;
+}
 
 html, body, #root {
   height: 100%;

@@ -3,5 +3,6 @@ dist/
 .env
 uploads/
 data/
+fonts/
 *.log
 .DS_Store
