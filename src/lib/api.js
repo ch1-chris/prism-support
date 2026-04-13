@@ -94,12 +94,18 @@ export const chat = {
 
 // --- Admin Chat ---
 export const adminChat = {
-  stream: (message) => {
+  stream: (message, files) => {
+    const formData = new FormData();
+    formData.append('message', message || '');
+    if (files?.length) {
+      for (const file of files) {
+        formData.append('files', file);
+      }
+    }
     return fetch('/api/admin-chat/stream', {
       method: 'POST',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message }),
+      body: formData,
     });
   },
 

@@ -2,11 +2,15 @@ import { Router } from 'express';
 import Anthropic from '@anthropic-ai/sdk';
 import { supabase } from '../db.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
+import { upload } from '../upload.js';
 
 const router = Router();
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const MODEL = 'claude-sonnet-4-20250514';
 const ADMIN_SESSION_ID = 'admin-training-chat';
+
+const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+const TEXT_EXTENSIONS = new Set(['.txt', '.md', '.csv', '.json', '.log', '.xml', '.html', '.css', '.js']);
 
 function buildTrainingSystemPrompt(kbEntries) {
   const kbSection = kbEntries.length
@@ -34,6 +38,7 @@ BEHAVIOR:
 - Be specific about what you DO and DON'T know based on the KB entries below.
 - If the admin corrects you, acknowledge the correction clearly and restate your updated understanding.
 - Keep track of the conversation context — if the admin has been describing a particular feature, stay focused on that topic until they move on.
+- When the admin shares images (screenshots, UI mockups, etc.), analyze them carefully. Describe what you see, identify UI elements, and relate them to existing KB entries. Point out anything you see that isn't documented yet.
 
 IMPORTANT:
 - You are NOT answering end-user questions right now. You are helping the admin verify and improve the knowledge base.
@@ -42,6 +47,64 @@ IMPORTANT:
 
 KNOWLEDGE BASE (${kbEntries.length} entries):
 ${kbSection}`;
+}
+
+function getFileExtension(filename) {
+  const dot = filename.lastIndexOf('.');
+  return dot >= 0 ? filename.slice(dot).toLowerCase() : '';
+}
+
+function buildContentBlocks(message, files) {
+  const content = [];
+
+  if (files?.length) {
+    for (const file of files) {
+      if (IMAGE_TYPES.has(file.mimetype)) {
+        content.push({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: file.mimetype,
+            data: file.buffer.toString('base64'),
+          },
+        });
+      } else if (TEXT_EXTENSIONS.has(getFileExtension(file.originalname))) {
+        const text = file.buffer.toString('utf-8');
+        content.push({
+          type: 'text',
+          text: `[File: ${file.originalname}]\n${text}`,
+        });
+      } else {
+        content.push({
+          type: 'text',
+          text: `[Attached file: ${file.originalname} (${file.mimetype}, ${Math.round(file.size / 1024)}KB) — binary file, cannot display contents]`,
+        });
+      }
+    }
+  }
+
+  if (message?.trim()) {
+    content.push({ type: 'text', text: message.trim() });
+  }
+
+  return content;
+}
+
+function buildStoredContent(message, files) {
+  const parts = [];
+  if (files?.length) {
+    for (const file of files) {
+      if (IMAGE_TYPES.has(file.mimetype)) {
+        parts.push(`[Image: ${file.originalname}]`);
+      } else {
+        parts.push(`[File: ${file.originalname}]`);
+      }
+    }
+  }
+  if (message?.trim()) {
+    parts.push(message.trim());
+  }
+  return parts.join('\n');
 }
 
 async function ensureAdminSession() {
@@ -67,16 +130,21 @@ async function ensureAdminSession() {
   }
 }
 
-router.post('/stream', asyncHandler(async (req, res) => {
-  const { message } = req.body;
-  if (!message?.trim()) throw new Error('Message is required');
+router.post('/stream', upload.array('files', 10), asyncHandler(async (req, res) => {
+  const message = req.body.message || '';
+  const files = req.files || [];
+
+  if (!message.trim() && files.length === 0) {
+    throw new Error('Message or file is required');
+  }
 
   await ensureAdminSession();
 
+  const storedContent = buildStoredContent(message, files);
   const { error: userMsgError } = await supabase.from('chat_messages').insert({
     session_id: ADMIN_SESSION_ID,
     role: 'user',
-    content: message,
+    content: storedContent,
   });
   if (userMsgError) throw new Error(`Failed to save user message: ${userMsgError.message}`);
 
@@ -94,7 +162,14 @@ router.post('/stream', asyncHandler(async (req, res) => {
     .limit(50);
   if (historyError) throw new Error(`Failed to load history: ${historyError.message}`);
 
-  const messages = (history || []).map(m => ({ role: m.role, content: m.content }));
+  const messages = (history || []).slice(0, -1).map(m => ({
+    role: m.role,
+    content: m.content,
+  }));
+
+  const currentContent = buildContentBlocks(message, files);
+  messages.push({ role: 'user', content: currentContent });
+
   const systemPrompt = buildTrainingSystemPrompt(kbEntries || []);
 
   res.writeHead(200, {
