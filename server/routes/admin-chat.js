@@ -40,6 +40,16 @@ BEHAVIOR:
 - If the admin corrects you, acknowledge the correction clearly and restate your updated understanding.
 - Keep track of the conversation context — if the admin has been describing a particular feature, stay focused on that topic until they move on.
 - When the admin shares images (screenshots, UI mockups, etc.), analyze them carefully. Describe what you see, identify UI elements, and relate them to existing KB entries. Point out anything you see that isn't documented yet.
+- When the admin asks you to create, draft, or package a KB entry (e.g. "create an entry for that", "let's add that to the knowledge base", "package that up"), produce the entry in a special format. Write a short summary of what the entry covers, then include the structured data inside <kb_entry_proposal> tags as a JSON object with these fields:
+  - title: short descriptive title
+  - feature_name: the feature being described (or null)
+  - ui_location: where in the UI this is found (or null)
+  - how_to_access: how to access this feature (or null)
+  - keyboard_shortcut: any keyboard shortcut (or null)
+  - content: detailed description, instructions, and context (be thorough — this is the primary text users will see)
+  - common_issues: known issues or gotchas (or null)
+  - related_features: array of related feature names (or empty array)
+  The admin will see a formatted preview card with an "Add to KB" button. Make sure the content field is comprehensive and includes everything discussed in the conversation about this topic. You may propose multiple entries by using multiple <kb_entry_proposal> blocks. The JSON inside the tags must be valid JSON with no markdown formatting.
 
 IMPORTANT:
 - You are NOT answering end-user questions right now. You are helping the admin verify and improve the knowledge base.
@@ -185,7 +195,7 @@ router.post('/stream', upload.array('files', 10), asyncHandler(async (req, res) 
   try {
     const stream = anthropic.messages.stream({
       model: MODEL,
-      max_tokens: 2000,
+      max_tokens: 4000,
       system: systemPrompt,
       messages,
     });

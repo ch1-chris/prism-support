@@ -7,10 +7,16 @@ function isVideo(file) {
   return VIDEO_TYPES.includes(file.type) || file.type.startsWith('video/');
 }
 
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
 export default function UploadZone({ version, onEntryAdded }) {
   const [dragging, setDragging] = useState(false);
-  const [processing, setProcessing] = useState('');
-  const [videoProgress, setVideoProgress] = useState(null);
+  const [progress, setProgress] = useState(null);
   const fileRef = useRef();
 
   async function handleFiles(files) {
@@ -21,18 +27,41 @@ export default function UploadZone({ version, onEntryAdded }) {
         await handleRegularFile(file);
       }
     }
-    setProcessing('');
-    setVideoProgress(null);
+    setProgress(null);
     if (fileRef.current) fileRef.current.value = '';
   }
 
   async function handleRegularFile(file) {
-    setProcessing(`Processing ${file.name}…`);
+    setProgress({
+      phase: 'uploading',
+      message: `Uploading ${file.name}…`,
+      loaded: 0,
+      total: file.size,
+    });
+
     try {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('version', version || 'latest');
-      const entry = await kb.processUpload(formData);
+
+      const entry = await kb.processUpload(formData, (p) => {
+        if (p.loaded < p.total) {
+          setProgress({
+            phase: 'uploading',
+            message: `Uploading ${file.name}…`,
+            loaded: p.loaded,
+            total: p.total,
+          });
+        } else {
+          setProgress({
+            phase: 'analyzing',
+            message: `Analyzing ${file.name} with Claude…`,
+            loaded: 0,
+            total: 0,
+          });
+        }
+      });
+
       onEntryAdded(entry);
     } catch (err) {
       alert(`Error processing ${file.name}: ${err.message}`);
@@ -40,14 +69,37 @@ export default function UploadZone({ version, onEntryAdded }) {
   }
 
   async function handleVideoFile(file) {
-    setVideoProgress({ step: 'uploading', message: `Uploading ${file.name}…`, current: 0, total: 0 });
+    setProgress({
+      phase: 'uploading',
+      message: `Uploading ${file.name}…`,
+      loaded: 0,
+      total: file.size,
+    });
+
+    let receivedDone = false;
 
     try {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('version', version || 'latest');
 
-      const response = await kb.processVideo(formData);
+      const response = await kb.processVideo(formData, (p) => {
+        if (p.uploadComplete) {
+          setProgress({
+            phase: 'processing',
+            message: 'Upload complete, waiting for server…',
+            loaded: 0,
+            total: 0,
+          });
+        } else {
+          setProgress({
+            phase: 'uploading',
+            message: `Uploading ${file.name}…`,
+            loaded: p.loaded,
+            total: p.total,
+          });
+        }
+      });
 
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
@@ -75,14 +127,17 @@ export default function UploadZone({ version, onEntryAdded }) {
             const event = JSON.parse(jsonStr);
 
             if (event.type === 'progress') {
-              setVideoProgress({
-                step: event.step,
+              setProgress({
+                phase: 'processing',
                 message: event.message,
                 current: event.current || 0,
                 total: event.total || 0,
+                step: event.step,
               });
             } else if (event.type === 'entry') {
               onEntryAdded(event.entry);
+            } else if (event.type === 'done') {
+              receivedDone = true;
             } else if (event.type === 'error') {
               throw new Error(event.message);
             }
@@ -90,6 +145,10 @@ export default function UploadZone({ version, onEntryAdded }) {
             if (parseErr.message && !parseErr.message.includes('JSON')) throw parseErr;
           }
         }
+      }
+
+      if (!receivedDone) {
+        throw new Error('Connection lost during video processing. The server may still be working — check the KB Browser for new entries.');
       }
     } catch (err) {
       alert(`Error processing video ${file.name}: ${err.message}`);
@@ -102,7 +161,11 @@ export default function UploadZone({ version, onEntryAdded }) {
     handleFiles(Array.from(e.dataTransfer.files));
   }
 
-  const isProcessing = !!processing || !!videoProgress;
+  const isProcessing = !!progress;
+  const uploadPercent = progress?.phase === 'uploading' && progress.total > 0
+    ? Math.round((progress.loaded / progress.total) * 100)
+    : null;
+  const stepProgress = progress?.phase === 'processing' && progress.total > 0;
 
   return (
     <div>
@@ -135,30 +198,44 @@ export default function UploadZone({ version, onEntryAdded }) {
           <line x1="12" y1="3" x2="12" y2="15" />
         </svg>
 
-        {videoProgress ? (
-          <div style={{ marginTop: 8 }}>
-            <p><strong>{videoProgress.message}</strong></p>
-            {videoProgress.total > 0 && (
+        {progress ? (
+          <div style={{ marginTop: 8, width: '100%', maxWidth: 320 }}>
+            <p><strong>{progress.message}</strong></p>
+
+            {uploadPercent !== null && (
               <div className="video-progress-bar" style={{ marginTop: 10 }}>
                 <div className="video-progress-track">
                   <div
                     className="video-progress-fill"
-                    style={{ width: `${(videoProgress.current / videoProgress.total) * 100}%` }}
+                    style={{ width: `${uploadPercent}%` }}
                   />
                 </div>
                 <span className="video-progress-label">
-                  {videoProgress.current} / {videoProgress.total}
+                  {formatBytes(progress.loaded)} / {formatBytes(progress.total)} ({uploadPercent}%)
                 </span>
               </div>
             )}
-            {!videoProgress.total && (
+
+            {stepProgress && (
+              <div className="video-progress-bar" style={{ marginTop: 10 }}>
+                <div className="video-progress-track">
+                  <div
+                    className="video-progress-fill"
+                    style={{ width: `${(progress.current / progress.total) * 100}%` }}
+                  />
+                </div>
+                <span className="video-progress-label">
+                  {progress.current} / {progress.total}
+                </span>
+              </div>
+            )}
+
+            {progress.phase !== 'uploading' && !stepProgress && (
               <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                 <div className="spinner" />
               </div>
             )}
           </div>
-        ) : processing ? (
-          <p><strong>{processing}</strong></p>
         ) : (
           <>
             <p><strong>Click or drag files to upload</strong></p>

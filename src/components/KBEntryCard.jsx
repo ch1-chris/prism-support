@@ -9,7 +9,12 @@ const SOURCE_LABELS = {
   voice_note: 'MIC',
   bulk_import: 'IMP',
   tutorial_video: 'VID',
+  training_chat: 'CHAT',
 };
+
+function isImageUrl(url) {
+  return url && url.includes('/images/');
+}
 
 export default function KBEntryCard({ entry, onUpdate, onDelete }) {
   const [expanded, setExpanded] = useState(false);
@@ -41,6 +46,16 @@ export default function KBEntryCard({ entry, onUpdate, onDelete }) {
     }
   }
 
+  async function handleRemoveFile() {
+    if (!window.confirm('Remove the stored file? The KB entry will remain.')) return;
+    try {
+      await kb.removeFile(entry.id);
+      onUpdate({ ...entry, file_url: null });
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
   return (
     <div className="kb-entry">
       <div className="kb-entry-header">
@@ -59,6 +74,11 @@ export default function KBEntryCard({ entry, onUpdate, onDelete }) {
         )}
         {entry.version && entry.version !== 'latest' && (
           <span className="badge badge-blue">{entry.version}</span>
+        )}
+        {entry.file_url && (
+          <span className="badge badge-default" title="Has stored file">
+            {isImageUrl(entry.file_url) ? 'IMG' : 'FILE'}
+          </span>
         )}
         {entry.is_stale && (
           <span className="badge badge-amber" title={entry.stale_reason}>Stale</span>
@@ -85,6 +105,50 @@ export default function KBEntryCard({ entry, onUpdate, onDelete }) {
           </>
         )}
       </div>
+
+      {expanded && entry.file_url && (
+        <div className="kb-entry-file" style={{ marginTop: 10, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+          {isImageUrl(entry.file_url) ? (
+            <a href={entry.file_url} target="_blank" rel="noreferrer">
+              <img
+                src={entry.file_url}
+                alt={entry.title}
+                style={{
+                  maxWidth: 200,
+                  maxHeight: 140,
+                  borderRadius: 6,
+                  border: '1px solid var(--border)',
+                  objectFit: 'cover',
+                }}
+              />
+            </a>
+          ) : (
+            <a
+              href={entry.file_url}
+              target="_blank"
+              rel="noreferrer"
+              className="btn btn-sm"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              Open file
+            </a>
+          )}
+          <button
+            className="btn btn-sm"
+            onClick={handleRemoveFile}
+            title="Remove stored file"
+            style={{ fontSize: 11, color: 'var(--text-muted)' }}
+          >
+            Remove file
+          </button>
+        </div>
+      )}
+
       {expanded && editing ? (
         <textarea
           rows={8}

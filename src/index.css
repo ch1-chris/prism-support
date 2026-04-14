@@ -1632,6 +1632,77 @@ label {
   margin: 12px 0;
 }
 
+/* === KB Proposal Card (inline in chat) === */
+
+.kb-proposal-card {
+  margin: 12px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--prism-orange);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+}
+
+.kb-proposal-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.kb-proposal-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+  flex: 1;
+}
+
+.kb-proposal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.kb-proposal-field {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+  line-height: 1.5;
+}
+
+.kb-proposal-content {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text);
+  margin: 8px 0;
+  padding: 10px 12px;
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
+.kb-proposal-actions {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kb-proposal-added {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--green, #3AE556);
+}
+
 /* === Focus-visible === */
 
 .btn:focus-visible,
@@ -1655,6 +1726,89 @@ select:focus-visible {
   border-radius: var(--radius-full);
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--grey-500); }
+
+/* === Media Browser === */
+
+.media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.media-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: border-color 0.15s ease;
+}
+
+.media-card:hover {
+  border-color: var(--text-muted);
+}
+
+.media-card-preview {
+  height: 140px;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.media-card-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.media-card-preview a {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+}
+
+.media-card-file-icon {
+  color: var(--text-muted);
+}
+
+.media-card-info {
+  padding: 10px 12px 4px;
+}
+
+.media-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.media-card-meta {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.media-card-filename {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.media-card-actions {
+  padding: 6px 12px 10px;
+  display: flex;
+  gap: 6px;
+}
 
 /* === Responsive === */
 

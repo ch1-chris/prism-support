@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Markdown from 'react-markdown';
-import { adminChat } from '../lib/api';
+import { adminChat, kb } from '../lib/api';
 
 const SUGGESTIONS = [
   'What gaps do you see in the knowledge base?',
@@ -9,6 +9,140 @@ const SUGGESTIONS = [
 ];
 
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
+const KB_PROPOSAL_REGEX = /<kb_entry_proposal>([\s\S]*?)<\/kb_entry_proposal>/g;
+
+function extractKBProposals(text) {
+  const segments = [];
+  let lastIndex = 0;
+
+  for (const match of text.matchAll(KB_PROPOSAL_REGEX)) {
+    if (match.index > lastIndex) {
+      segments.push({ type: 'text', content: text.slice(lastIndex, match.index) });
+    }
+
+    try {
+      const entry = JSON.parse(match[1].trim());
+      segments.push({ type: 'kb_proposal', entry, raw: match[0] });
+    } catch {
+      segments.push({ type: 'text', content: match[0] });
+    }
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    segments.push({ type: 'text', content: text.slice(lastIndex) });
+  }
+
+  return segments;
+}
+
+function KBProposalCard({ entry }) {
+  const [status, setStatus] = useState('idle');
+  const [addedEntry, setAddedEntry] = useState(null);
+
+  async function handleAdd() {
+    setStatus('adding');
+    try {
+      const created = await kb.create({
+        title: entry.title,
+        feature_name: entry.feature_name || null,
+        ui_location: entry.ui_location || null,
+        how_to_access: entry.how_to_access || null,
+        keyboard_shortcut: entry.keyboard_shortcut || null,
+        content: entry.content,
+        common_issues: entry.common_issues || null,
+        related_features: entry.related_features || [],
+        source: 'training_chat',
+        version: 'latest',
+      });
+      setAddedEntry(created);
+      setStatus('added');
+    } catch (err) {
+      alert(`Failed to add entry: ${err.message}`);
+      setStatus('idle');
+    }
+  }
+
+  return (
+    <div className="kb-proposal-card">
+      <div className="kb-proposal-header">
+        <span className="kb-proposal-title">{entry.title}</span>
+        <span className="badge badge-default">KB Proposal</span>
+      </div>
+
+      {entry.feature_name && (
+        <div className="kb-proposal-meta">
+          <span><strong>Feature:</strong> {entry.feature_name}</span>
+          {entry.ui_location && <span><strong>Location:</strong> {entry.ui_location}</span>}
+          {entry.keyboard_shortcut && <span><strong>Shortcut:</strong> {entry.keyboard_shortcut}</span>}
+        </div>
+      )}
+
+      {entry.how_to_access && (
+        <div className="kb-proposal-field">
+          <strong>How to access:</strong> {entry.how_to_access}
+        </div>
+      )}
+
+      <div className="kb-proposal-content">{entry.content}</div>
+
+      {entry.common_issues && (
+        <div className="kb-proposal-field">
+          <strong>Common issues:</strong> {entry.common_issues}
+        </div>
+      )}
+
+      {entry.related_features?.length > 0 && (
+        <div className="kb-proposal-field">
+          <strong>Related:</strong> {entry.related_features.join(', ')}
+        </div>
+      )}
+
+      <div className="kb-proposal-actions">
+        {status === 'added' ? (
+          <span className="kb-proposal-added">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+            Added to KB{addedEntry?.id ? ` (#${addedEntry.id})` : ''}
+          </span>
+        ) : (
+          <button
+            className="btn btn-sm btn-primary"
+            onClick={handleAdd}
+            disabled={status === 'adding'}
+          >
+            {status === 'adding' ? 'Adding…' : 'Add to KB'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AssistantMessage({ content }) {
+  const segments = extractKBProposals(content);
+  const hasProposals = segments.some((s) => s.type === 'kb_proposal');
+
+  if (!hasProposals) {
+    return <Markdown>{content}</Markdown>;
+  }
+
+  return (
+    <>
+      {segments.map((seg, i) => {
+        if (seg.type === 'kb_proposal') {
+          return <KBProposalCard key={i} entry={seg.entry} />;
+        }
+        const trimmed = seg.content.trim();
+        if (!trimmed) return null;
+        return <Markdown key={i}>{trimmed}</Markdown>;
+      })}
+    </>
+  );
+}
 
 export default function AdminChat() {
   const [messages, setMessages] = useState([]);
@@ -284,7 +418,7 @@ export default function AdminChat() {
               <>
                 <img src="/prism-logo.png" alt="Prism" className="admin-chat-avatar admin-chat-avatar-ai" />
                 <div className="admin-chat-bubble admin-chat-bubble-ai">
-                  <Markdown>{msg.content}</Markdown>
+                  <AssistantMessage content={msg.content} />
                 </div>
               </>
             )}
@@ -295,7 +429,7 @@ export default function AdminChat() {
           <div className="admin-chat-msg admin-chat-msg-ai">
             <img src="/prism-logo.png" alt="Prism" className="admin-chat-avatar admin-chat-avatar-ai" />
             {streamText ? (
-              <div className="admin-chat-bubble admin-chat-bubble-ai"><Markdown>{streamText}</Markdown></div>
+              <div className="admin-chat-bubble admin-chat-bubble-ai"><AssistantMessage content={streamText} /></div>
             ) : (
               <div className="chat-msg-thinking">
                 <div className="chat-thinking-dots"><span /><span /><span /></div>

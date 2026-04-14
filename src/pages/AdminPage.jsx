@@ -10,6 +10,7 @@ import AutoFetchConfig from '../components/AutoFetchConfig';
 import KBTestRunner from '../components/KBTestRunner';
 import SupportTickets from '../components/SupportTickets';
 import AdminChat from '../components/AdminChat';
+import MediaBrowser from '../components/MediaBrowser';
 
 const TABS = [
   { id: 'dashboard', label: 'Dashboard', icon: '◈', color: '#2ED6E5' },
@@ -18,6 +19,7 @@ const TABS = [
   { id: 'changelog', label: 'Changelog', icon: '△', color: '#FFAB1A' },
   { id: 'describe', label: 'Describe', icon: '✎', color: '#7040FF' },
   { id: 'entries', label: 'KB Browser', icon: '☰', color: '#F266FF' },
+  { id: 'media', label: 'Media', icon: '◻', color: '#FF6B8A' },
   { id: 'bulk', label: 'Bulk Import', icon: '⤓', color: '#1ABEFF' },
   { id: 'autofetch', label: 'Auto-Fetch', icon: '⟳', color: '#3AE556' },
   { id: 'tests', label: 'Test Runner', icon: '✓', color: '#3AE556' },
@@ -277,6 +279,7 @@ export default function AdminPage() {
                   <option value="voice_note">Voice note</option>
                   <option value="bulk_import">Bulk import</option>
                   <option value="tutorial_video">Tutorial video</option>
+                  <option value="training_chat">Training chat</option>
                 </select>
                 <button
                   className={`btn btn-sm ${staleFilter ? 'btn-primary' : ''}`}
@@ -400,6 +403,7 @@ export default function AdminPage() {
             </div>
           )}
 
+          {activeTab === 'media' && <MediaBrowser />}
           {activeTab === 'autofetch' && <AutoFetchConfig />}
           {activeTab === 'tests' && <KBTestRunner />}
           {activeTab === 'tickets' && <SupportTickets />}

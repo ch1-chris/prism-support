@@ -11,6 +11,14 @@ const router = Router();
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const MODEL = 'claude-sonnet-4-6';
+const BUCKET = 'helpbot-uploads';
+
+function extractStoragePath(fileUrl) {
+  const marker = `/object/public/${BUCKET}/`;
+  const idx = fileUrl.indexOf(marker);
+  if (idx === -1) return null;
+  return fileUrl.slice(idx + marker.length);
+}
 
 const STRUCTURED_PROMPT = `You are extracting information from content about a video editing application.
 Return a JSON object with these fields:
@@ -156,6 +164,47 @@ router.get('/', asyncHandler(async (req, res) => {
   res.json({ entries: data, total: count });
 }));
 
+// --- List entries with files ---
+router.get('/media', asyncHandler(async (req, res) => {
+  const { data, error, count } = await supabase
+    .from('kb_entries')
+    .select('id, title, source, file_url, version, created_at, updated_at', { count: 'exact' })
+    .not('file_url', 'is', null)
+    .order('created_at', { ascending: false });
+
+  if (error) throw new Error(`Failed to list media: ${error.message}`);
+  res.json({ entries: data || [], total: count });
+}));
+
+// --- Delete storage file from an entry ---
+router.post('/:id/remove-file', asyncHandler(async (req, res) => {
+  const { data: entry, error: fetchError } = await supabase
+    .from('kb_entries')
+    .select('id, file_url')
+    .eq('id', req.params.id)
+    .single();
+
+  if (fetchError) throw new Error(`Entry not found: ${fetchError.message}`);
+  if (!entry.file_url) throw new Error('Entry has no file attached');
+
+  const storagePath = extractStoragePath(entry.file_url);
+  if (storagePath) {
+    const { error: removeError } = await supabase.storage
+      .from(BUCKET)
+      .remove([storagePath]);
+    if (removeError) throw new Error(`Storage removal failed: ${removeError.message}`);
+  }
+
+  const { error: updateError } = await supabase
+    .from('kb_entries')
+    .update({ file_url: null })
+    .eq('id', req.params.id);
+
+  if (updateError) throw new Error(`Failed to clear file_url: ${updateError.message}`);
+
+  res.json({ ok: true });
+}));
+
 // --- Get single entry ---
 router.get('/:id', asyncHandler(async (req, res) => {
   const { data, error } = await supabase
@@ -209,6 +258,24 @@ router.put('/:id', asyncHandler(async (req, res) => {
 
 // --- Delete entry ---
 router.delete('/:id', asyncHandler(async (req, res) => {
+  const { data: entry, error: fetchError } = await supabase
+    .from('kb_entries')
+    .select('id, file_url')
+    .eq('id', req.params.id)
+    .single();
+
+  if (fetchError) throw new Error(`Entry not found: ${fetchError.message}`);
+
+  if (entry.file_url) {
+    const storagePath = extractStoragePath(entry.file_url);
+    if (storagePath) {
+      const { error: removeError } = await supabase.storage
+        .from(BUCKET)
+        .remove([storagePath]);
+      if (removeError) console.error(`[Delete] Storage cleanup failed for ${storagePath}:`, removeError.message);
+    }
+  }
+
   const { error } = await supabase
     .from('kb_entries')
     .delete()
@@ -366,10 +433,8 @@ router.post('/process-video', videoUpload.single('file'), asyncHandler(async (re
 
     send({ type: 'progress', step: 'transcribing', message: 'Transcribing audio and extracting frames...' });
 
-    const videoBlob = new Blob([readFileSync(videoPath)], { type: file.mimetype });
-
     const [transcription, frameResult] = await Promise.all([
-      transcribeVideo(videoBlob),
+      transcribeVideo(videoPath, file.mimetype),
       extractFrames(videoPath),
     ]);
 
@@ -490,12 +555,12 @@ ${STRUCTURED_PROMPT}`,
   }
 }));
 
-async function transcribeVideo(blob) {
+async function transcribeVideo(videoPath, mimetype) {
   const { ElevenLabsClient } = await import('@elevenlabs/elevenlabs-js');
   const elevenlabs = new ElevenLabsClient({ apiKey: process.env.ELEVENLABS_API_KEY });
 
   return elevenlabs.speechToText.convert({
-    file: blob,
+    file: createReadStream(videoPath),
     modelId: 'scribe_v2',
     tagAudioEvents: true,
     diarize: true,
@@ -828,14 +893,6 @@ router.get('/meta/versions', asyncHandler(async (req, res) => {
 // --- Cleanup expired uploaded files (5-day retention) ---
 
 const FILE_RETENTION_DAYS = 5;
-const BUCKET = 'helpbot-uploads';
-
-function extractStoragePath(fileUrl) {
-  const marker = `/object/public/${BUCKET}/`;
-  const idx = fileUrl.indexOf(marker);
-  if (idx === -1) return null;
-  return fileUrl.slice(idx + marker.length);
-}
 
 export async function cleanupExpiredFiles() {
   const cutoff = new Date();
