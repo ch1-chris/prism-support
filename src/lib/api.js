@@ -170,9 +170,6 @@ export const kb = {
   processVideo: (formData, onProgress) =>
     streamUploadWithProgress('/api/kb/process-video', formData, onProgress),
 
-  checkStaleness: () =>
-    request('/api/kb/check-staleness', { method: 'POST' }),
-
   audit: () => fetch('/api/kb/audit', {
     method: 'POST',
     credentials: 'include',

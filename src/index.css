@@ -1640,7 +1640,7 @@ label {
   border: 1px solid var(--border);
   border-left: 3px solid var(--prism-orange);
   border-radius: var(--radius-lg);
-  background: var(--bg);
+  background: var(--grey-0);
 }
 
 .kb-proposal-header {
@@ -1679,13 +1679,23 @@ label {
   color: var(--text);
   margin: 8px 0;
   padding: 10px 12px;
-  background: var(--surface);
+  background: var(--grey-50);
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  max-height: 200px;
+  max-height: 240px;
   overflow-y: auto;
   white-space: pre-wrap;
+  scrollbar-width: thin;
+  scrollbar-color: var(--grey-500) transparent;
 }
+
+.kb-proposal-content::-webkit-scrollbar { width: 6px; }
+.kb-proposal-content::-webkit-scrollbar-track { background: transparent; }
+.kb-proposal-content::-webkit-scrollbar-thumb {
+  background: var(--grey-300, #B0B3BA);
+  border-radius: 3px;
+}
+.kb-proposal-content::-webkit-scrollbar-thumb:hover { background: var(--grey-500); }
 
 .kb-proposal-actions {
   margin-top: 10px;

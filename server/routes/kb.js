@@ -33,96 +33,6 @@ Return a JSON object with these fields:
 
 Return ONLY valid JSON, no markdown fences.`;
 
-// --- Deduplication: match existing entries or insert new ---
-
-async function getExistingSummary() {
-  const { data, error } = await supabase
-    .from('kb_entries')
-    .select('id, title, feature_name, content, created_at, updated_at')
-    .order('updated_at', { ascending: false })
-    .limit(200);
-  if (error) throw new Error(`Failed to fetch existing entries: ${error.message}`);
-  return (data || []).map(e => `[ID:${e.id}] ${e.title}${e.feature_name ? ` (${e.feature_name})` : ''}: ${e.content.slice(0, 120)}`).join('\n');
-}
-
-async function matchOrInsert(parsed, source, version, fileUrl) {
-  const existingSummary = await getExistingSummary();
-
-  if (!existingSummary) {
-    return createEntry(parsed, source, version, fileUrl);
-  }
-
-  const matchResponse = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 500,
-    messages: [{
-      role: 'user',
-      content: `A new knowledge base entry has been extracted from an upload. Check if it overlaps with any existing entry below.
-
-NEW ENTRY:
-Title: ${parsed.title}
-Feature: ${parsed.feature_name || 'N/A'}
-Content: ${parsed.content?.slice(0, 300)}
-
-EXISTING ENTRIES:
-${existingSummary}
-
-The new content is MORE RECENT and should take precedence over existing entries when they conflict.
-
-Return a JSON object with:
-- "action": "update" if the new entry covers the same feature/topic as an existing one, or "create" if it is genuinely new
-- "update_id": the ID of the existing entry to replace (or null if action is "create")
-- "stale_entries": array of { "id": N, "reason": "..." } for any existing entries that now contradict this new information
-
-Return ONLY valid JSON, no markdown fences.`,
-    }],
-  });
-
-  const matchResult = JSON.parse(matchResponse.content[0].text);
-
-  let entry;
-  let action;
-
-  if (matchResult.action === 'update' && matchResult.update_id) {
-    const { data, error } = await supabase
-      .from('kb_entries')
-      .update({
-        ...parsed,
-        related_features: parsed.related_features || [],
-        source,
-        version,
-        file_url: fileUrl || null,
-        is_stale: false,
-        stale_reason: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', matchResult.update_id)
-      .select()
-      .single();
-    if (error) throw new Error(`Failed to update entry ${matchResult.update_id}: ${error.message}`);
-    entry = data;
-    action = 'updated';
-  } else {
-    const result = await createEntry(parsed, source, version, fileUrl);
-    entry = result.entry;
-    action = 'created';
-  }
-
-  await embedAndStoreEntry(entry.id, `${entry.title} ${entry.content}`);
-
-  const staleSuggestions = (matchResult.stale_entries || []).map(s => ({
-    id: s.id,
-    reason: s.reason,
-  }));
-
-  if (staleSuggestions.length > 0) {
-    console.log(`[Dedup] Claude suggested ${staleSuggestions.length} entries may be stale (not auto-flagged):`,
-      staleSuggestions.map(s => `#${s.id}: ${s.reason}`).join('; '));
-  }
-
-  return { entry, action, staleCount: 0, staleSuggestions };
-}
-
 async function createEntry(parsed, source, version, fileUrl) {
   const { data, error } = await supabase
     .from('kb_entries')
@@ -350,7 +260,8 @@ async function processImage(file, version) {
   });
 
   const parsed = JSON.parse(response.content[0].text);
-  const result = await matchOrInsert(parsed, 'image_upload', version, urlData.publicUrl);
+  const result = await createEntry(parsed, 'image_upload', version, urlData.publicUrl);
+  await embedAndStoreEntry(result.entry.id, `${result.entry.title} ${result.entry.content}`);
   return result.entry;
 }
 
@@ -392,7 +303,8 @@ async function processAudioVideo(file, version) {
   });
 
   const parsed = JSON.parse(response.content[0].text);
-  const result = await matchOrInsert(parsed, 'voice_note', version, urlData.publicUrl);
+  const result = await createEntry(parsed, 'voice_note', version, urlData.publicUrl);
+  await embedAndStoreEntry(result.entry.id, `${result.entry.title} ${result.entry.content}`);
   return result.entry;
 }
 
@@ -409,7 +321,8 @@ async function processTextFile(file, version) {
   });
 
   const parsed = JSON.parse(response.content[0].text);
-  const result = await matchOrInsert(parsed, 'text_file', version, null);
+  const result = await createEntry(parsed, 'text_file', version, null);
+  await embedAndStoreEntry(result.entry.id, `${result.entry.title} ${result.entry.content}`);
   return result.entry;
 }
 
@@ -553,9 +466,10 @@ ${STRUCTURED_PROMPT}`,
       });
 
       const parsed = JSON.parse(structureResponse.content[0].text);
-      const result = await matchOrInsert(parsed, 'tutorial_video', version, fileUrl);
+      const result = await createEntry(parsed, 'tutorial_video', version, fileUrl);
+      await embedAndStoreEntry(result.entry.id, `${result.entry.title} ${result.entry.content}`);
       entries.push(result.entry);
-      send({ type: 'entry', entry: result.entry, action: result.action, staleCount: result.staleCount });
+      send({ type: 'entry', entry: result.entry, action: result.action, staleCount: 0 });
     }
 
     send({ type: 'done', count: entries.length });
@@ -585,17 +499,6 @@ router.post('/process-changelog', asyncHandler(async (req, res) => {
   const { text, version = 'latest' } = req.body;
   if (!text?.trim()) throw new Error('Changelog text is required');
 
-  const { data: existingEntries, error: fetchError } = await supabase
-    .from('kb_entries')
-    .select('id, title, content, feature_name')
-    .limit(200);
-
-  if (fetchError) throw new Error(`Failed to fetch existing entries: ${fetchError.message}`);
-
-  const existingSummary = (existingEntries || [])
-    .map(e => `[ID:${e.id}] ${e.title}: ${e.content.slice(0, 100)}`)
-    .join('\n');
-
   const response = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 4000,
@@ -603,17 +506,10 @@ router.post('/process-changelog', asyncHandler(async (req, res) => {
       role: 'user',
       content: `These are release notes for a video editing app:\n\n${text.slice(0, 8000)}
 
-EXISTING KB ENTRIES:
-${existingSummary}
-
-Instructions:
-1. Extract each distinct change into a structured KB entry.
-2. For each change, check if an existing KB entry covers the same feature. If so, include its ID in an "update_id" field so we update it instead of creating a duplicate.
-3. For any existing entries that conflict with these changes, include them in a "stale_entries" array with their ID and the reason they're stale.
+Extract each distinct change into a structured KB entry.
 
 Return a JSON object with:
-- "entries": array of entry objects, each with: title, feature_name, ui_location, how_to_access, keyboard_shortcut, content, common_issues, related_features, update_id (or null)
-- "stale_entries": array of { id, reason }
+- "entries": array of entry objects, each with: title, feature_name, ui_location, how_to_access, keyboard_shortcut, content, common_issues, related_features
 
 Return ONLY valid JSON, no markdown fences.`,
     }],
@@ -622,61 +518,25 @@ Return ONLY valid JSON, no markdown fences.`,
   const parsed = JSON.parse(response.content[0].text);
   const results = [];
 
-  for (const entry of parsed.entries || []) {
-    const { update_id, ...fields } = entry;
+  for (const fields of parsed.entries || []) {
+    const { data, error } = await supabase
+      .from('kb_entries')
+      .insert({
+        ...fields,
+        related_features: fields.related_features || [],
+        source: 'changelog',
+        version,
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
 
-    if (update_id) {
-      const { data, error } = await supabase
-        .from('kb_entries')
-        .update({
-          ...fields,
-          related_features: fields.related_features || [],
-          source: 'changelog',
-          version,
-          is_stale: false,
-          stale_reason: null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', update_id)
-        .select()
-        .single();
-
-      if (error) throw new Error(`Failed to update entry ${update_id}: ${error.message}`);
-      await embedAndStoreEntry(data.id, `${data.title} ${data.content}`);
-      results.push({ ...data, action: 'updated' });
-    } else {
-      const { data, error } = await supabase
-        .from('kb_entries')
-        .insert({
-          ...fields,
-          related_features: fields.related_features || [],
-          source: 'changelog',
-          version,
-          updated_at: new Date().toISOString(),
-        })
-        .select()
-        .single();
-
-      if (error) throw new Error(`Failed to create entry: ${error.message}`);
-      await embedAndStoreEntry(data.id, `${data.title} ${data.content}`);
-      results.push({ ...data, action: 'created' });
-    }
+    if (error) throw new Error(`Failed to create entry: ${error.message}`);
+    await embedAndStoreEntry(data.id, `${data.title} ${data.content}`);
+    results.push({ ...data, action: 'created' });
   }
 
-  const staleSuggestions = (parsed.stale_entries || []).map(s => ({
-    id: s.id,
-    reason: s.reason,
-  }));
-
-  if (staleSuggestions.length > 0) {
-    console.log(`[Changelog] Claude suggested ${staleSuggestions.length} entries may be stale (not auto-flagged):`,
-      staleSuggestions.map(s => `#${s.id}: ${s.reason}`).join('; '));
-  }
-
-  res.json({
-    entries: results,
-    stale_suggestions: staleSuggestions,
-  });
+  res.json({ entries: results });
 }));
 
 // --- Process description ---
@@ -694,8 +554,9 @@ router.post('/process-description', asyncHandler(async (req, res) => {
   });
 
   const parsed = JSON.parse(response.content[0].text);
-  const result = await matchOrInsert(parsed, 'description', version, null);
-  res.status(result.action === 'created' ? 201 : 200).json({ ...result.entry, _action: result.action, _staleCount: result.staleCount });
+  const result = await createEntry(parsed, 'description', version, null);
+  await embedAndStoreEntry(result.entry.id, `${result.entry.title} ${result.entry.content}`);
+  res.status(201).json(result.entry);
 }));
 
 // --- Bulk import ---
@@ -868,27 +729,6 @@ router.post('/fetch-changelog', asyncHandler(async (req, res) => {
   }
 
   res.json({ fetched: results.length, entries: results });
-}));
-
-// --- Staleness check ---
-router.post('/check-staleness', asyncHandler(async (req, res) => {
-  const days = parseInt(process.env.STALENESS_DAYS || '90', 10);
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - days);
-
-  const { data, error } = await supabase
-    .from('kb_entries')
-    .update({
-      is_stale: true,
-      stale_reason: `Not updated in ${days}+ days`,
-    })
-    .lt('updated_at', cutoff.toISOString())
-    .eq('is_stale', false)
-    .select('id');
-
-  if (error) throw new Error(`Staleness check failed: ${error.message}`);
-
-  res.json({ flagged: data?.length || 0 });
 }));
 
 // --- Get versions ---
