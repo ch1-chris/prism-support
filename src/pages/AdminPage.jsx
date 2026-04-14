@@ -72,7 +72,6 @@ export default function AdminPage() {
     if (authenticated) {
       loadEntries();
       kb.getVersions().then(setVersions).catch((err) => console.error('Failed to load versions:', err));
-      kb.checkStaleness().catch((err) => console.error('Failed to check staleness:', err));
     }
   }, [authenticated, loadEntries]);
 

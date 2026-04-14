@@ -81,7 +81,22 @@ export default function KBEntryCard({ entry, onUpdate, onDelete }) {
           </span>
         )}
         {entry.is_stale && (
-          <span className="badge badge-amber" title={entry.stale_reason}>Stale</span>
+          <button
+            className="badge badge-amber"
+            title={`${entry.stale_reason || 'Marked stale'} — click to clear`}
+            onClick={async (e) => {
+              e.stopPropagation();
+              try {
+                const updated = await kb.clearStale(entry.id);
+                onUpdate(updated);
+              } catch (err) {
+                alert(err.message);
+              }
+            }}
+            style={{ cursor: 'pointer', border: 'none' }}
+          >
+            Stale ×
+          </button>
         )}
         <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
           {new Date(entry.updated_at).toLocaleDateString()}

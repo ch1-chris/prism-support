@@ -141,6 +141,7 @@ export const kb = {
   delete: (id) => request(`/api/kb/${id}`, { method: 'DELETE' }),
   listMedia: () => request('/api/kb/media'),
   removeFile: (id) => request(`/api/kb/${id}/remove-file`, { method: 'POST' }),
+  clearStale: (id) => request(`/api/kb/${id}/clear-stale`, { method: 'POST' }),
 
   processUpload: (formData, onProgress) =>
     uploadWithProgress('/api/kb/process-upload', formData, onProgress).then(async (r) => {

@@ -110,17 +110,17 @@ Return ONLY valid JSON, no markdown fences.`,
 
   await embedAndStoreEntry(entry.id, `${entry.title} ${entry.content}`);
 
-  let staleCount = 0;
-  for (const stale of matchResult.stale_entries || []) {
-    const { error: staleError } = await supabase
-      .from('kb_entries')
-      .update({ is_stale: true, stale_reason: stale.reason })
-      .eq('id', stale.id);
-    if (staleError) console.error(`[Dedup] Failed to mark entry ${stale.id} stale:`, staleError.message);
-    else staleCount++;
+  const staleSuggestions = (matchResult.stale_entries || []).map(s => ({
+    id: s.id,
+    reason: s.reason,
+  }));
+
+  if (staleSuggestions.length > 0) {
+    console.log(`[Dedup] Claude suggested ${staleSuggestions.length} entries may be stale (not auto-flagged):`,
+      staleSuggestions.map(s => `#${s.id}: ${s.reason}`).join('; '));
   }
 
-  return { entry, action, staleCount };
+  return { entry, action, staleCount: 0, staleSuggestions };
 }
 
 async function createEntry(parsed, source, version, fileUrl) {
@@ -233,6 +233,19 @@ router.post('/', asyncHandler(async (req, res) => {
   await embedAndStoreEntry(data.id, `${data.title} ${data.content}`);
 
   res.status(201).json(data);
+}));
+
+// --- Clear stale flag ---
+router.post('/:id/clear-stale', asyncHandler(async (req, res) => {
+  const { data, error } = await supabase
+    .from('kb_entries')
+    .update({ is_stale: false, stale_reason: null })
+    .eq('id', req.params.id)
+    .select()
+    .single();
+
+  if (error) throw new Error(`Failed to clear stale flag: ${error.message}`);
+  res.json(data);
 }));
 
 // --- Update entry ---
@@ -650,18 +663,19 @@ Return ONLY valid JSON, no markdown fences.`,
     }
   }
 
-  for (const stale of parsed.stale_entries || []) {
-    const { error: staleError } = await supabase
-      .from('kb_entries')
-      .update({ is_stale: true, stale_reason: stale.reason })
-      .eq('id', stale.id);
+  const staleSuggestions = (parsed.stale_entries || []).map(s => ({
+    id: s.id,
+    reason: s.reason,
+  }));
 
-    if (staleError) throw new Error(`Failed to mark entry ${stale.id} as stale: ${staleError.message}`);
+  if (staleSuggestions.length > 0) {
+    console.log(`[Changelog] Claude suggested ${staleSuggestions.length} entries may be stale (not auto-flagged):`,
+      staleSuggestions.map(s => `#${s.id}: ${s.reason}`).join('; '));
   }
 
   res.json({
     entries: results,
-    stale_count: (parsed.stale_entries || []).length,
+    stale_suggestions: staleSuggestions,
   });
 }));
 
