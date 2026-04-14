@@ -69,7 +69,8 @@ const loginLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many login attempts. Please try again later.' },
 });
-app.use('/api/auth', loginLimiter, authRoutes);
+app.post('/api/auth/login', loginLimiter);
+app.use('/api/auth', authRoutes);
 app.use('/api/kb', requireAuth, kbRoutes);
 app.use('/api/chat', chatLimiter, chatRoutes);
 app.use('/api/analytics', requireAuth, analyticsRoutes);
