@@ -76,39 +76,40 @@ export default function UploadZone({ version, onEntryAdded }) {
       total: file.size,
     });
 
-    let receivedDone = false;
-
     try {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('version', version || 'latest');
 
-      const response = await kb.processVideo(formData, (p) => {
-        if (p.uploadComplete) {
-          setProgress({
-            phase: 'processing',
-            message: 'Upload complete, waiting for server…',
-            loaded: 0,
-            total: 0,
-          });
-        } else {
-          setProgress({
-            phase: 'uploading',
-            message: `Uploading ${file.name}…`,
-            loaded: p.loaded,
-            total: p.total,
-          });
-        }
+      const { fileUrl, tmpPath } = await kb.uploadVideo(formData, (p) => {
+        setProgress({
+          phase: 'uploading',
+          message: `Uploading ${file.name}…`,
+          loaded: p.loaded,
+          total: p.total,
+        });
+      });
+
+      setProgress({
+        phase: 'processing',
+        message: 'Upload complete — starting video analysis…',
+      });
+
+      const response = await kb.processVideo({
+        tmpPath,
+        fileUrl,
+        version: version || 'latest',
+        mimetype: file.type,
       });
 
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
-        throw new Error(body.error || `Upload failed: ${response.status}`);
+        throw new Error(body.error || `Processing failed: ${response.status}`);
       }
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let lineBuffer = '';
+      let receivedDone = false;
 
       while (true) {
         const { done, value } = await reader.read();

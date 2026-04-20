@@ -48,80 +48,6 @@ function uploadWithProgress(url, formData, onProgress) {
   });
 }
 
-function streamUploadWithProgress(url, formData, onProgress) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', url);
-    xhr.withCredentials = true;
-    xhr.responseType = 'text';
-
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable && onProgress) {
-        onProgress({ loaded: e.loaded, total: e.total });
-      }
-    };
-
-    xhr.upload.onload = () => {
-      if (onProgress) onProgress({ loaded: 1, total: 1, uploadComplete: true });
-    };
-
-    xhr.onreadystatechange = () => {
-      if (xhr.readyState === XMLHttpRequest.HEADERS_RECEIVED) {
-        if (xhr.status >= 400) {
-          return;
-        }
-        const fakeResponse = {
-          ok: xhr.status >= 200 && xhr.status < 300,
-          status: xhr.status,
-          statusText: xhr.statusText,
-          headers: { get: (k) => xhr.getResponseHeader(k) },
-          json: () => new Promise((res, rej) => {
-            xhr.onload = () => {
-              try { res(JSON.parse(xhr.responseText)); }
-              catch { rej(new Error('Invalid JSON response')); }
-            };
-          }),
-          body: {
-            getReader: () => {
-              let position = 0;
-              const encoder = new TextEncoder();
-              return {
-                read: () => new Promise((res) => {
-                  function check() {
-                    const current = xhr.responseText;
-                    if (current.length > position) {
-                      const chunk = current.slice(position);
-                      position = current.length;
-                      res({ done: false, value: encoder.encode(chunk) });
-                    } else if (xhr.readyState === XMLHttpRequest.DONE) {
-                      if (current.length > position) {
-                        const chunk = current.slice(position);
-                        position = current.length;
-                        res({ done: false, value: encoder.encode(chunk) });
-                      } else {
-                        res({ done: true, value: undefined });
-                      }
-                    } else {
-                      setTimeout(check, 100);
-                    }
-                  }
-                  check();
-                }),
-              };
-            },
-          },
-        };
-        resolve(fakeResponse);
-      }
-    };
-
-    xhr.onerror = () => reject(new Error('Network error during upload'));
-    xhr.ontimeout = () => reject(new Error('Upload timed out'));
-
-    xhr.send(formData);
-  });
-}
-
 // --- Auth ---
 export const auth = {
   login: (password) => request('/api/auth/login', { method: 'POST', body: JSON.stringify({ password }) }),
@@ -167,8 +93,19 @@ export const kb = {
   fetchChangelog: (url) =>
     request('/api/kb/fetch-changelog', { method: 'POST', body: JSON.stringify({ url }) }),
 
-  processVideo: (formData, onProgress) =>
-    streamUploadWithProgress('/api/kb/process-video', formData, onProgress),
+  uploadVideo: (formData, onProgress) =>
+    uploadWithProgress('/api/kb/upload-video', formData, onProgress).then(async (r) => {
+      if (!r.ok) { const b = await r.json().catch(() => ({})); throw new Error(b.error || r.status); }
+      return r.json();
+    }),
+
+  processVideo: (body) =>
+    fetch('/api/kb/process-video', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
 
   audit: () => fetch('/api/kb/audit', {
     method: 'POST',

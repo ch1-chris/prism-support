@@ -1,5 +1,7 @@
 import { Router } from 'express';
-import { readFileSync, createReadStream, unlinkSync, statSync } from 'fs';
+import { readFileSync, createReadStream, unlinkSync, statSync, existsSync } from 'fs';
+import { resolve, join } from 'path';
+import { tmpdir } from 'os';
 import Anthropic from '@anthropic-ai/sdk';
 import { supabase } from '../db.js';
 import { embedAndStoreEntry } from '../embeddings.js';
@@ -326,22 +328,55 @@ async function processTextFile(file, version) {
   return result.entry;
 }
 
-// --- Process tutorial video (SSE) ---
+// --- Upload video file (phase 1) ---
 const MAX_STORAGE_UPLOAD_BYTES = 1024 * 1024 * 1024;
 
-router.post('/process-video', videoUpload.single('file'), asyncHandler(async (req, res) => {
+router.post('/upload-video', videoUpload.single('file'), asyncHandler(async (req, res) => {
   ensureTmpDir();
   const file = req.file;
   if (!file) throw new Error('No video file provided');
+
+  const videoPath = file.path;
+  const fileSize = statSync(videoPath).size;
+
+  let fileUrl = null;
+  if (fileSize <= MAX_STORAGE_UPLOAD_BYTES) {
+    const storagePath = `media/${Date.now()}-${file.originalname}`;
+    const videoBuffer = readFileSync(videoPath);
+    const { error: uploadError } = await supabase.storage
+      .from(BUCKET)
+      .upload(storagePath, videoBuffer, { contentType: file.mimetype });
+    if (uploadError) {
+      console.error(`[Video] Storage upload skipped (${uploadError.message})`);
+    } else {
+      const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(storagePath);
+      fileUrl = urlData.publicUrl;
+    }
+  }
+
+  res.json({ fileUrl, tmpPath: videoPath });
+}));
+
+// --- Process tutorial video (phase 2, SSE) ---
+router.post('/process-video', asyncHandler(async (req, res) => {
+  const { tmpPath, fileUrl, version = 'latest' } = req.body;
+  if (!tmpPath) throw new Error('tmpPath is required');
   if (!process.env.ELEVENLABS_API_KEY) throw new Error('ELEVENLABS_API_KEY is required');
+
+  const expectedPrefix = join(tmpdir(), 'prism-uploads');
+  const resolved = resolve(tmpPath);
+  if (!resolved.startsWith(expectedPrefix)) {
+    throw new Error('Invalid tmpPath');
+  }
+  if (!existsSync(resolved)) {
+    throw new Error('Video file not found — it may have been cleaned up. Please re-upload.');
+  }
+
+  const videoPath = resolved;
+  let framesDir = null;
 
   req.setTimeout(30 * 60 * 1000);
   res.setTimeout(30 * 60 * 1000);
-
-  const version = req.body.version || 'latest';
-  const videoPath = file.path;
-  const fileSize = statSync(videoPath).size;
-  let framesDir = null;
 
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -363,7 +398,7 @@ router.post('/process-video', videoUpload.single('file'), asyncHandler(async (re
     send({ type: 'progress', step: 'transcribing', message: 'Transcribing audio and extracting frames...' });
 
     const [transcription, frameResult] = await Promise.all([
-      transcribeVideo(videoPath, file.mimetype),
+      transcribeVideo(videoPath, req.body.mimetype || 'video/mp4'),
       extractFrames(videoPath),
     ]);
 
@@ -372,26 +407,6 @@ router.post('/process-video', videoUpload.single('file'), asyncHandler(async (re
     const transcript = transcription.text;
 
     send({ type: 'progress', step: 'transcribed', message: `Transcribed ${transcript.length} characters, extracted ${allFrames.length} frames` });
-
-    let fileUrl = null;
-    if (fileSize <= MAX_STORAGE_UPLOAD_BYTES) {
-      send({ type: 'progress', step: 'uploading', message: 'Uploading video to storage...' });
-      const storagePath = `media/${Date.now()}-${file.originalname}`;
-      const videoBuffer = readFileSync(videoPath);
-      const { error: uploadError } = await supabase.storage
-        .from('helpbot-uploads')
-        .upload(storagePath, videoBuffer, { contentType: file.mimetype });
-      if (uploadError) {
-        console.error(`[Video] Storage upload skipped (${uploadError.message})`);
-      } else {
-        const { data: urlData } = supabase.storage
-          .from('helpbot-uploads')
-          .getPublicUrl(storagePath);
-        fileUrl = urlData.publicUrl;
-      }
-    } else {
-      send({ type: 'progress', step: 'uploading', message: `Video too large for storage (${Math.round(fileSize / 1024 / 1024)}MB), skipping file upload — knowledge will still be extracted.` });
-    }
 
     // Step 3: segment transcript into topics
     send({ type: 'progress', step: 'segmenting', message: 'Identifying topics in the video...' });
