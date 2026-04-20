@@ -100,12 +100,10 @@ export const kb = {
     }),
 
   processVideo: (body) =>
-    fetch('/api/kb/process-video', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }),
+    request('/api/kb/process-video', { method: 'POST', body: JSON.stringify(body) }),
+
+  getVideoJobStatus: (jobId) =>
+    request(`/api/kb/process-video/${jobId}`),
 
   audit: () => fetch('/api/kb/audit', {
     method: 'POST',

@@ -94,63 +94,48 @@ export default function UploadZone({ version, onEntryAdded }) {
         message: 'Upload complete — starting video analysis…',
       });
 
-      const response = await kb.processVideo({
+      const { jobId } = await kb.processVideo({
         tmpPath,
         fileUrl,
         version: version || 'latest',
         mimetype: file.type,
       });
 
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body.error || `Processing failed: ${response.status}`);
-      }
+      let seenEntryCount = 0;
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let lineBuffer = '';
-      let receivedDone = false;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        lineBuffer += decoder.decode(value, { stream: true });
-        const lines = lineBuffer.split('\n');
-        lineBuffer = lines.pop();
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const jsonStr = line.slice(6);
-          if (!jsonStr) continue;
-
+      await new Promise((resolve, reject) => {
+        const interval = setInterval(async () => {
           try {
-            const event = JSON.parse(jsonStr);
+            const job = await kb.getVideoJobStatus(jobId);
 
-            if (event.type === 'progress') {
+            if (job.progress) {
               setProgress({
                 phase: 'processing',
-                message: event.message,
-                current: event.current || 0,
-                total: event.total || 0,
-                step: event.step,
+                message: job.progress.message,
+                current: job.progress.current || 0,
+                total: job.progress.total || 0,
+                step: job.progress.step,
               });
-            } else if (event.type === 'entry') {
-              onEntryAdded(event.entry);
-            } else if (event.type === 'done') {
-              receivedDone = true;
-            } else if (event.type === 'error') {
-              throw new Error(event.message);
             }
-          } catch (parseErr) {
-            if (parseErr.message && !parseErr.message.includes('JSON')) throw parseErr;
-          }
-        }
-      }
 
-      if (!receivedDone) {
-        throw new Error('Connection lost during video processing. The server may still be working — check the KB Browser for new entries.');
-      }
+            while (seenEntryCount < job.entries.length) {
+              onEntryAdded(job.entries[seenEntryCount]);
+              seenEntryCount++;
+            }
+
+            if (job.status === 'done') {
+              clearInterval(interval);
+              resolve();
+            } else if (job.status === 'error') {
+              clearInterval(interval);
+              reject(new Error(job.error));
+            }
+          } catch (pollErr) {
+            clearInterval(interval);
+            reject(pollErr);
+          }
+        }, 3000);
+      });
     } catch (err) {
       alert(`Error processing video ${file.name}: ${err.message}`);
     }

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { readFileSync, createReadStream, unlinkSync, statSync, existsSync } from 'fs';
 import { resolve, join } from 'path';
 import { tmpdir } from 'os';
+import { randomUUID } from 'crypto';
 import Anthropic from '@anthropic-ai/sdk';
 import { supabase } from '../db.js';
 import { embedAndStoreEntry } from '../embeddings.js';
@@ -357,9 +358,12 @@ router.post('/upload-video', videoUpload.single('file'), asyncHandler(async (req
   res.json({ fileUrl, tmpPath: videoPath });
 }));
 
-// --- Process tutorial video (phase 2, SSE) ---
+// --- Process tutorial video (phase 2, async with polling) ---
+const videoJobs = new Map();
+const JOB_TTL_MS = 30 * 60 * 1000;
+
 router.post('/process-video', asyncHandler(async (req, res) => {
-  const { tmpPath, fileUrl, version = 'latest' } = req.body;
+  const { tmpPath, fileUrl, version = 'latest', mimetype } = req.body;
   if (!tmpPath) throw new Error('tmpPath is required');
   if (!process.env.ELEVENLABS_API_KEY) throw new Error('ELEVENLABS_API_KEY is required');
 
@@ -372,33 +376,34 @@ router.post('/process-video', asyncHandler(async (req, res) => {
     throw new Error('Video file not found — it may have been cleaned up. Please re-upload.');
   }
 
-  const videoPath = resolved;
+  const jobId = randomUUID();
+  videoJobs.set(jobId, { status: 'processing', progress: null, entries: [], error: null });
+
+  runVideoProcessing(jobId, resolved, fileUrl, version, mimetype || 'video/mp4');
+
+  res.json({ jobId });
+}));
+
+router.get('/process-video/:jobId', asyncHandler(async (req, res) => {
+  const job = videoJobs.get(req.params.jobId);
+  if (!job) throw new Error('Job not found');
+
+  res.json(job);
+
+  if (job.status === 'done' || job.status === 'error') {
+    setTimeout(() => videoJobs.delete(req.params.jobId), 60000);
+  }
+}));
+
+async function runVideoProcessing(jobId, videoPath, fileUrl, version, mimetype) {
+  const job = videoJobs.get(jobId);
   let framesDir = null;
 
-  req.setTimeout(30 * 60 * 1000);
-  res.setTimeout(30 * 60 * 1000);
-
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
-    'X-Accel-Buffering': 'no',
-  });
-
-  const heartbeat = setInterval(() => res.write(':ping\n\n'), 15000);
-  req.on('close', () => clearInterval(heartbeat));
-
-  function send(event) {
-    res.write(`data: ${JSON.stringify(event)}\n\n`);
-  }
-
   try {
-    send({ type: 'progress', step: 'starting', message: 'Starting video processing...' });
-
-    send({ type: 'progress', step: 'transcribing', message: 'Transcribing audio and extracting frames...' });
+    job.progress = { step: 'transcribing', message: 'Transcribing audio and extracting frames...' };
 
     const [transcription, frameResult] = await Promise.all([
-      transcribeVideo(videoPath, req.body.mimetype || 'video/mp4'),
+      transcribeVideo(videoPath, mimetype),
       extractFrames(videoPath),
     ]);
 
@@ -406,10 +411,9 @@ router.post('/process-video', asyncHandler(async (req, res) => {
     const allFrames = frameResult.frames;
     const transcript = transcription.text;
 
-    send({ type: 'progress', step: 'transcribed', message: `Transcribed ${transcript.length} characters, extracted ${allFrames.length} frames` });
+    job.progress = { step: 'transcribed', message: `Transcribed ${transcript.length} characters, extracted ${allFrames.length} frames` };
 
-    // Step 3: segment transcript into topics
-    send({ type: 'progress', step: 'segmenting', message: 'Identifying topics in the video...' });
+    job.progress = { step: 'segmenting', message: 'Identifying topics in the video...' };
 
     const segmentResponse = await anthropic.messages.create({
       model: MODEL,
@@ -435,19 +439,16 @@ ${transcript}`,
     });
 
     const segments = JSON.parse(segmentResponse.content[0].text);
-    send({ type: 'progress', step: 'segmented', message: `Identified ${segments.length} topic${segments.length !== 1 ? 's' : ''}` });
+    job.progress = { step: 'segmented', message: `Identified ${segments.length} topic${segments.length !== 1 ? 's' : ''}` };
 
-    // Step 4: structure each segment with vision
-    const entries = [];
     for (let i = 0; i < segments.length; i++) {
       const seg = segments[i];
-      send({
-        type: 'progress',
+      job.progress = {
         step: 'structuring',
         message: `Analyzing topic ${i + 1} of ${segments.length}: ${seg.title}`,
         current: i + 1,
         total: segments.length,
-      });
+      };
 
       const segFrames = getFramesForSegment(allFrames, seg.start_seconds, seg.end_seconds, 8);
 
@@ -486,20 +487,20 @@ ${STRUCTURED_PROMPT}`,
       const parsed = JSON.parse(structureResponse.content[0].text);
       const result = await createEntry(parsed, 'tutorial_video', version, fileUrl);
       await embedAndStoreEntry(result.entry.id, `${result.entry.title} ${result.entry.content}`);
-      entries.push(result.entry);
-      send({ type: 'entry', entry: result.entry, action: result.action, staleCount: 0 });
+      job.entries.push(result.entry);
     }
 
-    send({ type: 'done', count: entries.length });
+    job.status = 'done';
+    job.progress = { step: 'done', message: `Created ${job.entries.length} entries` };
   } catch (err) {
-    send({ type: 'error', message: err.message });
+    job.status = 'error';
+    job.error = err.message;
   } finally {
-    clearInterval(heartbeat);
     cleanupFrames(framesDir);
     try { unlinkSync(videoPath); } catch { /* best-effort */ }
-    res.end();
+    setTimeout(() => videoJobs.delete(jobId), JOB_TTL_MS);
   }
-}));
+}
 
 async function transcribeVideo(videoPath, mimetype) {
   const { ElevenLabsClient } = await import('@elevenlabs/elevenlabs-js');
