@@ -16,6 +16,11 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const MODEL = 'claude-sonnet-4-6';
 const BUCKET = 'helpbot-uploads';
 
+function parseJSON(text) {
+  const stripped = text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '');
+  return JSON.parse(stripped);
+}
+
 function extractStoragePath(fileUrl) {
   const marker = `/object/public/${BUCKET}/`;
   const idx = fileUrl.indexOf(marker);
@@ -262,7 +267,7 @@ async function processImage(file, version) {
     }],
   });
 
-  const parsed = JSON.parse(response.content[0].text);
+  const parsed = parseJSON(response.content[0].text);
   const result = await createEntry(parsed, 'image_upload', version, urlData.publicUrl);
   await embedAndStoreEntry(result.entry.id, `${result.entry.title} ${result.entry.content}`);
   return result.entry;
@@ -305,7 +310,7 @@ async function processAudioVideo(file, version) {
     }],
   });
 
-  const parsed = JSON.parse(response.content[0].text);
+  const parsed = parseJSON(response.content[0].text);
   const result = await createEntry(parsed, 'voice_note', version, urlData.publicUrl);
   await embedAndStoreEntry(result.entry.id, `${result.entry.title} ${result.entry.content}`);
   return result.entry;
@@ -323,7 +328,7 @@ async function processTextFile(file, version) {
     }],
   });
 
-  const parsed = JSON.parse(response.content[0].text);
+  const parsed = parseJSON(response.content[0].text);
   const result = await createEntry(parsed, 'text_file', version, null);
   await embedAndStoreEntry(result.entry.id, `${result.entry.title} ${result.entry.content}`);
   return result.entry;
@@ -438,7 +443,7 @@ ${transcript}`,
       }],
     });
 
-    const segments = JSON.parse(segmentResponse.content[0].text);
+    const segments = parseJSON(segmentResponse.content[0].text);
     job.progress = { step: 'segmented', message: `Identified ${segments.length} topic${segments.length !== 1 ? 's' : ''}` };
 
     for (let i = 0; i < segments.length; i++) {
@@ -484,7 +489,7 @@ ${STRUCTURED_PROMPT}`,
         messages: [{ role: 'user', content: contentBlocks }],
       });
 
-      const parsed = JSON.parse(structureResponse.content[0].text);
+      const parsed = parseJSON(structureResponse.content[0].text);
       const result = await createEntry(parsed, 'tutorial_video', version, fileUrl);
       await embedAndStoreEntry(result.entry.id, `${result.entry.title} ${result.entry.content}`);
       job.entries.push(result.entry);
@@ -535,7 +540,7 @@ Return ONLY valid JSON, no markdown fences.`,
     }],
   });
 
-  const parsed = JSON.parse(response.content[0].text);
+  const parsed = parseJSON(response.content[0].text);
   const results = [];
 
   for (const fields of parsed.entries || []) {
@@ -573,7 +578,7 @@ router.post('/process-description', asyncHandler(async (req, res) => {
     }],
   });
 
-  const parsed = JSON.parse(response.content[0].text);
+  const parsed = parseJSON(response.content[0].text);
   const result = await createEntry(parsed, 'description', version, null);
   await embedAndStoreEntry(result.entry.id, `${result.entry.title} ${result.entry.content}`);
   res.status(201).json(result.entry);
@@ -610,7 +615,7 @@ router.post('/bulk-import', upload.array('files', 50), asyncHandler(async (req, 
             }],
           });
 
-          const parsed = JSON.parse(response.content[0].text);
+          const parsed = parseJSON(response.content[0].text);
           const { data, error } = await supabase
             .from('kb_entries')
             .insert({
@@ -638,7 +643,7 @@ router.post('/bulk-import', upload.array('files', 50), asyncHandler(async (req, 
           }],
         });
 
-        const parsed = JSON.parse(response.content[0].text);
+        const parsed = parseJSON(response.content[0].text);
         const { data, error } = await supabase
           .from('kb_entries')
           .insert({
@@ -710,7 +715,7 @@ router.post('/fetch-changelog', asyncHandler(async (req, res) => {
       }],
     });
 
-    const parsed = JSON.parse(response.content[0].text);
+    const parsed = parseJSON(response.content[0].text);
     const { data, error } = await supabase
       .from('kb_entries')
       .insert({
@@ -880,7 +885,7 @@ Return ONLY valid JSON, no markdown fences.`,
       }],
     });
 
-    const batchResult = JSON.parse(auditResponse.content[0].text);
+    const batchResult = parseJSON(auditResponse.content[0].text);
     allDuplicates.push(...(batchResult.duplicates || []));
     allContradictions.push(...(batchResult.contradictions || []));
   }
