@@ -350,6 +350,9 @@ router.post('/process-video', videoUpload.single('file'), asyncHandler(async (re
     'X-Accel-Buffering': 'no',
   });
 
+  const heartbeat = setInterval(() => res.write(':ping\n\n'), 15000);
+  req.on('close', () => clearInterval(heartbeat));
+
   function send(event) {
     res.write(`data: ${JSON.stringify(event)}\n\n`);
   }
@@ -476,6 +479,7 @@ ${STRUCTURED_PROMPT}`,
   } catch (err) {
     send({ type: 'error', message: err.message });
   } finally {
+    clearInterval(heartbeat);
     cleanupFrames(framesDir);
     try { unlinkSync(videoPath); } catch { /* best-effort */ }
     res.end();
