@@ -1,7 +1,10 @@
 import ffmpeg from 'fluent-ffmpeg';
+import ffmpegPath from 'ffmpeg-static';
 import { mkdtempSync, readFileSync, rmSync, existsSync, mkdirSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+
+ffmpeg.setFfmpegPath(ffmpegPath);
 
 const FRAME_INTERVAL_SECONDS = 5;
 const MAX_WIDTH = 720;
