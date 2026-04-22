@@ -16,6 +16,13 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const MODEL = 'claude-sonnet-4-6';
 const BUCKET = 'helpbot-uploads';
 
+function sanitizeFilename(name) {
+  return name
+    .normalize('NFKD')
+    .replace(/[^\w.\-]/g, '_')
+    .replace(/_{2,}/g, '_');
+}
+
 function parseJSON(text) {
   const stripped = text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '');
   return JSON.parse(stripped);
@@ -245,7 +252,7 @@ router.post('/process-upload', upload.single('file'), asyncHandler(async (req, r
 async function processImage(file, version) {
   const base64 = file.buffer.toString('base64');
 
-  const storagePath = `images/${Date.now()}-${file.originalname}`;
+  const storagePath = `images/${Date.now()}-${sanitizeFilename(file.originalname)}`;
   const { error: uploadError } = await supabase.storage
     .from('helpbot-uploads')
     .upload(storagePath, file.buffer, { contentType: file.mimetype });
@@ -274,7 +281,7 @@ async function processImage(file, version) {
 }
 
 async function processAudioVideo(file, version) {
-  const storagePath = `media/${Date.now()}-${file.originalname}`;
+  const storagePath = `media/${Date.now()}-${sanitizeFilename(file.originalname)}`;
   const { error: uploadError } = await supabase.storage
     .from('helpbot-uploads')
     .upload(storagePath, file.buffer, { contentType: file.mimetype });
@@ -347,7 +354,7 @@ router.post('/upload-video', videoUpload.single('file'), asyncHandler(async (req
 
   let fileUrl = null;
   if (fileSize <= MAX_STORAGE_UPLOAD_BYTES) {
-    const storagePath = `media/${Date.now()}-${file.originalname}`;
+    const storagePath = `media/${Date.now()}-${sanitizeFilename(file.originalname)}`;
     const videoBuffer = readFileSync(videoPath);
     const { error: uploadError } = await supabase.storage
       .from(BUCKET)
