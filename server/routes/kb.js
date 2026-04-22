@@ -263,21 +263,22 @@ async function compressForApi(buffer) {
 }
 
 async function processImage(file, version) {
+  let imageBuffer = file.buffer;
+  if (imageBuffer.length > ANTHROPIC_IMAGE_MAX_BYTES) {
+    imageBuffer = await compressForApi(imageBuffer);
+  }
+
   const storagePath = `images/${Date.now()}-${sanitizeFilename(file.originalname)}`;
   const { error: uploadError } = await supabase.storage
     .from('helpbot-uploads')
-    .upload(storagePath, file.buffer, { contentType: file.mimetype });
+    .upload(storagePath, imageBuffer, { contentType: 'image/png' });
   if (uploadError) throw new Error(`Storage upload failed: ${uploadError.message}`);
 
   const { data: urlData } = supabase.storage
     .from('helpbot-uploads')
     .getPublicUrl(storagePath);
 
-  let apiBuffer = file.buffer;
-  if (apiBuffer.length > ANTHROPIC_IMAGE_MAX_BYTES) {
-    apiBuffer = await compressForApi(apiBuffer);
-  }
-  const base64 = apiBuffer.toString('base64');
+  const base64 = imageBuffer.toString('base64');
 
   const response = await anthropic.messages.create({
     model: MODEL,
