@@ -4,6 +4,7 @@ import { resolve, join } from 'path';
 import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
 import Anthropic from '@anthropic-ai/sdk';
+import sharp from 'sharp';
 import { supabase } from '../db.js';
 import { embedAndStoreEntry } from '../embeddings.js';
 import { upload, videoUpload } from '../upload.js';
@@ -249,9 +250,19 @@ router.post('/process-upload', upload.single('file'), asyncHandler(async (req, r
   res.status(201).json(result);
 }));
 
-async function processImage(file, version) {
-  const base64 = file.buffer.toString('base64');
+const ANTHROPIC_IMAGE_MAX_BYTES = 4.5 * 1024 * 1024;
 
+async function compressForApi(buffer) {
+  let img = sharp(buffer);
+  const meta = await img.metadata();
+  const maxDim = 2048;
+  if (meta.width > maxDim || meta.height > maxDim) {
+    img = img.resize({ width: maxDim, height: maxDim, fit: 'inside' });
+  }
+  return img.png({ quality: 80, compressionLevel: 9 }).toBuffer();
+}
+
+async function processImage(file, version) {
   const storagePath = `images/${Date.now()}-${sanitizeFilename(file.originalname)}`;
   const { error: uploadError } = await supabase.storage
     .from('helpbot-uploads')
@@ -262,13 +273,19 @@ async function processImage(file, version) {
     .from('helpbot-uploads')
     .getPublicUrl(storagePath);
 
+  let apiBuffer = file.buffer;
+  if (apiBuffer.length > ANTHROPIC_IMAGE_MAX_BYTES) {
+    apiBuffer = await compressForApi(apiBuffer);
+  }
+  const base64 = apiBuffer.toString('base64');
+
   const response = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 2000,
     messages: [{
       role: 'user',
       content: [
-        { type: 'image', source: { type: 'base64', media_type: file.mimetype, data: base64 } },
+        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: base64 } },
         { type: 'text', text: `This is a screenshot from a video editing app. ${STRUCTURED_PROMPT}` },
       ],
     }],
