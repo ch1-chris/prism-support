@@ -25,13 +25,16 @@ function detectLanguage() {
 
 const RATE_LIMIT_MESSAGE = "We're processing too many requests at the moment. Please try again in a few minutes, or contact your Prism account rep for urgent questions.";
 
+// Ordered as a general video-making workflow: top-left (start a project) →
+// bottom-right (export). The 2-column grid fills row by row, so this array
+// order maps directly to that visual flow.
 const SUGGESTIONS = [
-  { text: 'How do I export my project?', icon: '↗', color: 'var(--section-distribution)' },
-  { text: 'Where is the trim tool?', icon: '✂', color: 'var(--section-editing)' },
-  { text: 'What keyboard shortcuts are available?', icon: '⌨', color: 'var(--section-writers)' },
-  { text: 'How do I add captions?', icon: '☰', color: 'var(--section-home)' },
-  { text: 'How do I manage my projects?', icon: '◈', color: 'var(--section-library)' },
-  { text: 'What file formats are supported?', icon: '◎', color: 'var(--section-finance)' },
+  { text: 'How do I start a new project?', icon: '✦', color: 'var(--section-home)' },
+  { text: 'How do I import media into my project?', icon: '⤓', color: 'var(--section-library)' },
+  { text: 'How do I edit and trim my clips?', icon: '✂', color: 'var(--section-editing)' },
+  { text: 'How do I add titles and captions?', icon: '☰', color: 'var(--section-writers)' },
+  { text: 'How do I add transitions and effects?', icon: '◎', color: 'var(--section-finance)' },
+  { text: 'How do I export my finished video?', icon: '↗', color: 'var(--section-distribution)' },
 ];
 
 export default function ChatPage() {
