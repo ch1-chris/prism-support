@@ -11,6 +11,8 @@ import KBTestRunner from '../components/KBTestRunner';
 import SupportTickets from '../components/SupportTickets';
 import AdminChat from '../components/AdminChat';
 import MediaBrowser from '../components/MediaBrowser';
+import TutorialsManager from '../components/TutorialsManager';
+import FaqManager from '../components/FaqManager';
 
 const TABS = [
   { id: 'dashboard', label: 'Dashboard', icon: '◈', color: '#2ED6E5' },
@@ -20,6 +22,8 @@ const TABS = [
   { id: 'describe', label: 'Describe', icon: '✎', color: '#7040FF' },
   { id: 'entries', label: 'KB Browser', icon: '☰', color: '#F266FF' },
   { id: 'media', label: 'Media', icon: '◻', color: '#FF6B8A' },
+  { id: 'gallery', label: 'Gallery', icon: '▶', color: '#FF6B8A' },
+  { id: 'faq', label: 'FAQ', icon: '?', color: '#7040FF' },
   { id: 'bulk', label: 'Bulk Import', icon: '⤓', color: '#1ABEFF' },
   { id: 'autofetch', label: 'Auto-Fetch', icon: '⟳', color: '#3AE556' },
   { id: 'tests', label: 'Test Runner', icon: '✓', color: '#3AE556' },
@@ -403,6 +407,8 @@ export default function AdminPage() {
           )}
 
           {activeTab === 'media' && <MediaBrowser />}
+          {activeTab === 'gallery' && <TutorialsManager />}
+          {activeTab === 'faq' && <FaqManager />}
           {activeTab === 'autofetch' && <AutoFetchConfig />}
           {activeTab === 'tests' && <KBTestRunner />}
           {activeTab === 'tickets' && <SupportTickets />}

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 import { chat } from '../lib/api';
 import ChatMessage from '../components/ChatMessage';
@@ -256,6 +257,20 @@ export default function ChatPage() {
           </div>
           <div className="chat-topbar-controls">
             <LanguageSelector value={language} onChange={setLanguage} />
+            <Link to="/gallery" className="chat-new-btn" title="Tutorial gallery">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polygon points="5 3 19 12 5 21 5 3" />
+              </svg>
+              <span>Tutorials</span>
+            </Link>
+            <Link to="/faq" className="chat-new-btn" title="Frequently asked questions">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+              <span>FAQ</span>
+            </Link>
             <button className="chat-new-btn" onClick={handleNewSession} title="New conversation">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="12" y1="5" x2="12" y2="19" />

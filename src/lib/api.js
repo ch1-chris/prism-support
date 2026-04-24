@@ -170,6 +170,37 @@ export const adminChat = {
   clear: () => request('/api/admin-chat/clear', { method: 'POST' }),
 };
 
+// --- Tutorials (Gallery) ---
+export const tutorials = {
+  list: () => request('/api/tutorials'),
+  listAdmin: () => request('/api/tutorials/admin'),
+  create: (data) => request('/api/tutorials', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => request(`/api/tutorials/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  remove: (id) => request(`/api/tutorials/${id}`, { method: 'DELETE' }),
+  reorder: (items) => request('/api/tutorials/reorder', { method: 'POST', body: JSON.stringify({ items }) }),
+
+  uploadVideo: (formData, onProgress) =>
+    uploadWithProgress('/api/tutorials/upload-video', formData, onProgress).then(async (r) => {
+      if (!r.ok) { const b = await r.json().catch(() => ({})); throw new Error(b.error || r.status); }
+      return r.json();
+    }),
+
+  uploadThumbnail: (formData, onProgress) =>
+    uploadWithProgress('/api/tutorials/upload-thumbnail', formData, onProgress).then(async (r) => {
+      if (!r.ok) { const b = await r.json().catch(() => ({})); throw new Error(b.error || r.status); }
+      return r.json();
+    }),
+};
+
+// --- FAQ ---
+export const faq = {
+  list: () => request('/api/faq'),
+  refresh: () => fetch('/api/faq/refresh', {
+    method: 'POST',
+    credentials: 'include',
+  }),
+};
+
 // --- Analytics ---
 export const analytics = {
   summary: () => request('/api/analytics/summary'),
