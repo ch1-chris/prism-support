@@ -208,6 +208,15 @@ export default function AdminPage() {
           <span style={{ width: 16, textAlign: 'center', fontSize: 14 }}>💬</span>
           Open chatbot
         </a>
+        <a
+          href="/prism-thumbnail-template.html"
+          className="sidebar-link"
+          target="_blank"
+          rel="noreferrer"
+        >
+          <span style={{ width: 16, textAlign: 'center', fontSize: 14 }}>🖼️</span>
+          Thumbnail generator
+        </a>
         <div
           className="sidebar-link"
           role="button"
