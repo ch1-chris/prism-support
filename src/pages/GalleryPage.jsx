@@ -46,7 +46,7 @@ export default function GalleryPage() {
   const groups = groupByCategory(items);
 
   return (
-    <div className="chat-page">
+    <div className="chat-page gallery-page">
       <header className="chat-topbar">
         <div className="chat-topbar-inner">
           <div className="chat-brand">

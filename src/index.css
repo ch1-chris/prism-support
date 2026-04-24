@@ -1820,6 +1820,12 @@ select:focus-visible {
   gap: 6px;
 }
 
+/* Tutorial gallery: widen the topbar's inner container so its left/right edges
+   line up with the wider thumbnail grid below it at every viewport width. */
+.gallery-page .chat-topbar-inner {
+  max-width: 1400px;
+}
+
 /* Tutorial gallery: larger thumbnails that show full 16:9 image without cropping */
 .gallery-tutorials .media-grid {
   grid-template-columns: repeat(auto-fill, minmax(440px, 1fr));
