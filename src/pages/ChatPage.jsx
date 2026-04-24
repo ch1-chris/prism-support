@@ -30,11 +30,11 @@ const RATE_LIMIT_MESSAGE = "We're processing too many requests at the moment. Pl
 // order maps directly to that visual flow.
 const SUGGESTIONS = [
   { text: 'How do I start a new project?', icon: '✦', color: 'var(--section-home)' },
-  { text: 'How do I import media into my project?', icon: '⤓', color: 'var(--section-library)' },
-  { text: 'How do I edit and trim my clips?', icon: '✂', color: 'var(--section-editing)' },
-  { text: 'How do I add titles and captions?', icon: '☰', color: 'var(--section-writers)' },
-  { text: 'How do I add transitions and effects?', icon: '◎', color: 'var(--section-finance)' },
-  { text: 'How do I export my finished video?', icon: '↗', color: 'var(--section-distribution)' },
+  { text: 'How do I set up my Brand Kit?', icon: '◆', color: 'var(--section-library)' },
+  { text: 'How do I import media into a project?', icon: '⤓', color: 'var(--section-editing)' },
+  { text: 'What are Styles and Presets?', icon: '❖', color: 'var(--section-writers)' },
+  { text: 'What are Prism Agents?', icon: '⚙', color: 'var(--section-finance)' },
+  { text: 'How do I export my finished timeline?', icon: '↗', color: 'var(--section-distribution)' },
 ];
 
 export default function ChatPage() {
