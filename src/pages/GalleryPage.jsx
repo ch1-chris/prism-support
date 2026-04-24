@@ -60,8 +60,8 @@ export default function GalleryPage() {
         </div>
       </header>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '32px 24px' }}>
-        <div style={{ maxWidth: 900, margin: '0 auto' }}>
+      <div className="gallery-tutorials" style={{ flex: 1, overflowY: 'auto', padding: '32px 24px' }}>
+        <div style={{ maxWidth: 1400, margin: '0 auto' }}>
           <div style={{ marginBottom: 24 }}>
             <h1 style={{ margin: 0, fontSize: 28, fontWeight: 600 }}>Tutorials</h1>
             <p style={{ margin: '6px 0 0', color: 'var(--text-secondary)', fontSize: 14 }}>

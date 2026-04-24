@@ -1820,6 +1820,22 @@ select:focus-visible {
   gap: 6px;
 }
 
+/* Tutorial gallery: larger thumbnails that show full 16:9 image without cropping */
+.gallery-tutorials .media-grid {
+  grid-template-columns: repeat(auto-fill, minmax(440px, 1fr));
+  gap: 20px;
+}
+
+.gallery-tutorials .media-card-preview {
+  height: auto;
+  aspect-ratio: 16 / 9;
+  background: #000;
+}
+
+.gallery-tutorials .media-card-preview img {
+  object-fit: contain;
+}
+
 /* === Responsive === */
 
 @media (max-width: 768px) {
