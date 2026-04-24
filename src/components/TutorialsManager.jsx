@@ -82,9 +82,7 @@ export default function TutorialsManager() {
     }
     setVideoProgress({ loaded: 0, total: file.size });
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const res = await tutorialsApi.uploadVideo(formData, (p) => {
+      const res = await tutorialsApi.uploadVideo(file, (p) => {
         setVideoProgress({ loaded: p.loaded, total: p.total });
       });
       setDraft((d) => ({ ...d, video_url: res.video_url }));
@@ -104,9 +102,7 @@ export default function TutorialsManager() {
     }
     setThumbProgress({ loaded: 0, total: file.size });
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const res = await tutorialsApi.uploadThumbnail(formData, (p) => {
+      const res = await tutorialsApi.uploadThumbnail(file, (p) => {
         setThumbProgress({ loaded: p.loaded, total: p.total });
       });
       setDraft((d) => ({ ...d, thumbnail_url: res.thumbnail_url }));
@@ -194,6 +190,10 @@ export default function TutorialsManager() {
     <div>
       <div className="info-box" style={{ marginBottom: 16 }}>
         Manage the public tutorial gallery. Upload videos and thumbnails, set categories, and reorder cards. Unpublished tutorials are hidden from <code>/gallery</code>.
+        <br />
+        <small style={{ color: 'var(--text-muted)' }}>
+          Files upload directly to Supabase Storage. The <code>helpbot-uploads</code> bucket&apos;s File size limit (Storage &rarr; Buckets &rarr; Edit) caps how large a video can be.
+        </small>
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>

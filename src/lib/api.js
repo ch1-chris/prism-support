@@ -171,6 +171,48 @@ export const adminChat = {
 };
 
 // --- Tutorials (Gallery) ---
+
+// Two-step direct upload: ask the server for a signed Supabase Storage URL,
+// then PUT the file straight to Supabase. Skips the hosting edge proxy entirely
+// so we are not bound by Railway's per-request body limit.
+async function directUpload(signPath, file, onProgress) {
+  const sign = await request(signPath, {
+    method: 'POST',
+    body: JSON.stringify({
+      filename: file.name,
+      contentType: file.type,
+      size: file.size,
+    }),
+  });
+
+  await new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', sign.uploadUrl);
+    xhr.setRequestHeader('Content-Type', file.type);
+    xhr.setRequestHeader('x-upsert', 'false');
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) {
+        onProgress({ loaded: e.loaded, total: e.total });
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+      } else {
+        reject(new Error(`Storage upload failed (${xhr.status}): ${xhr.responseText || xhr.statusText}`));
+      }
+    };
+    xhr.onerror = () => reject(new Error('Network error during direct upload to Supabase'));
+    xhr.ontimeout = () => reject(new Error('Direct upload to Supabase timed out'));
+
+    xhr.send(file);
+  });
+
+  return { url: sign.publicUrl, path: sign.path };
+}
+
 export const tutorials = {
   list: () => request('/api/tutorials'),
   listAdmin: () => request('/api/tutorials/admin'),
@@ -179,17 +221,15 @@ export const tutorials = {
   remove: (id) => request(`/api/tutorials/${id}`, { method: 'DELETE' }),
   reorder: (items) => request('/api/tutorials/reorder', { method: 'POST', body: JSON.stringify({ items }) }),
 
-  uploadVideo: (formData, onProgress) =>
-    uploadWithProgress('/api/tutorials/upload-video', formData, onProgress).then(async (r) => {
-      if (!r.ok) { const b = await r.json().catch(() => ({})); throw new Error(b.error || r.status); }
-      return r.json();
-    }),
+  uploadVideo: async (file, onProgress) => {
+    const { url, path } = await directUpload('/api/tutorials/upload-video/sign', file, onProgress);
+    return { video_url: url, storage_path: path };
+  },
 
-  uploadThumbnail: (formData, onProgress) =>
-    uploadWithProgress('/api/tutorials/upload-thumbnail', formData, onProgress).then(async (r) => {
-      if (!r.ok) { const b = await r.json().catch(() => ({})); throw new Error(b.error || r.status); }
-      return r.json();
-    }),
+  uploadThumbnail: async (file, onProgress) => {
+    const { url, path } = await directUpload('/api/tutorials/upload-thumbnail/sign', file, onProgress);
+    return { thumbnail_url: url, storage_path: path };
+  },
 };
 
 // --- FAQ ---

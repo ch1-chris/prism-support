@@ -1,15 +1,11 @@
 import { Router } from 'express';
-import { readFileSync, unlinkSync, existsSync } from 'fs';
 import { supabase } from '../db.js';
-import { upload, videoUpload } from '../upload.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
 
 const BUCKET = 'helpbot-uploads';
-const MAX_VIDEO_BYTES = 1024 * 1024 * 1024; // 1 GB hard cap for storage upload
-const MAX_THUMBNAIL_BYTES = 10 * 1024 * 1024;
 
 function sanitizeFilename(name) {
   return name
@@ -157,49 +153,43 @@ router.post('/reorder', requireAuth, asyncHandler(async (req, res) => {
   res.json({ updated: items.length });
 }));
 
-// --- Admin: upload video file ---
-router.post('/upload-video', requireAuth, videoUpload.single('file'), asyncHandler(async (req, res) => {
-  const file = req.file;
-  if (!file) throw new Error('No video file provided');
-  if (file.size > MAX_VIDEO_BYTES) {
-    if (existsSync(file.path)) unlinkSync(file.path);
-    throw new Error(`Video exceeds ${MAX_VIDEO_BYTES} byte limit`);
+// --- Admin: sign a direct upload URL for a tutorial video ---
+// The browser PUTs the file straight to Supabase Storage using the returned
+// signedUrl; bytes never go through this server (and so never through the
+// hosting edge proxy, which has a much smaller body size limit).
+router.post('/upload-video/sign', requireAuth, asyncHandler(async (req, res) => {
+  const { filename, contentType } = req.body || {};
+  if (!filename || typeof filename !== 'string') {
+    throw new Error('filename is required');
+  }
+  if (!contentType || typeof contentType !== 'string' || !contentType.startsWith('video/')) {
+    throw new Error('contentType must be a video/* MIME type');
   }
 
-  try {
-    const storagePath = `tutorials/${Date.now()}-${sanitizeFilename(file.originalname)}`;
-    const buffer = readFileSync(file.path);
-    const { error: uploadError } = await supabase.storage
-      .from(BUCKET)
-      .upload(storagePath, buffer, { contentType: file.mimetype });
-    if (uploadError) throw new Error(`Storage upload failed: ${uploadError.message}`);
+  const path = `tutorials/${Date.now()}-${sanitizeFilename(filename)}`;
+  const { data, error } = await supabase.storage.from(BUCKET).createSignedUploadUrl(path);
+  if (error) throw new Error(`Failed to sign upload URL: ${error.message}`);
 
-    const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(storagePath);
-    res.status(201).json({ video_url: urlData.publicUrl, storage_path: storagePath });
-  } finally {
-    if (existsSync(file.path)) unlinkSync(file.path);
-  }
+  const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(path);
+  res.json({ uploadUrl: data.signedUrl, publicUrl: urlData.publicUrl, path });
 }));
 
-// --- Admin: upload thumbnail image ---
-router.post('/upload-thumbnail', requireAuth, upload.single('file'), asyncHandler(async (req, res) => {
-  const file = req.file;
-  if (!file) throw new Error('No thumbnail file provided');
-  if (!file.mimetype.startsWith('image/')) {
-    throw new Error('Thumbnail must be an image');
+// --- Admin: sign a direct upload URL for a tutorial thumbnail ---
+router.post('/upload-thumbnail/sign', requireAuth, asyncHandler(async (req, res) => {
+  const { filename, contentType } = req.body || {};
+  if (!filename || typeof filename !== 'string') {
+    throw new Error('filename is required');
   }
-  if (file.size > MAX_THUMBNAIL_BYTES) {
-    throw new Error(`Thumbnail exceeds ${MAX_THUMBNAIL_BYTES} byte limit`);
+  if (!contentType || typeof contentType !== 'string' || !contentType.startsWith('image/')) {
+    throw new Error('contentType must be an image/* MIME type');
   }
 
-  const storagePath = `tutorials/thumbnails/${Date.now()}-${sanitizeFilename(file.originalname)}`;
-  const { error: uploadError } = await supabase.storage
-    .from(BUCKET)
-    .upload(storagePath, file.buffer, { contentType: file.mimetype });
-  if (uploadError) throw new Error(`Storage upload failed: ${uploadError.message}`);
+  const path = `tutorials/thumbnails/${Date.now()}-${sanitizeFilename(filename)}`;
+  const { data, error } = await supabase.storage.from(BUCKET).createSignedUploadUrl(path);
+  if (error) throw new Error(`Failed to sign upload URL: ${error.message}`);
 
-  const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(storagePath);
-  res.status(201).json({ thumbnail_url: urlData.publicUrl, storage_path: storagePath });
+  const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(path);
+  res.json({ uploadUrl: data.signedUrl, publicUrl: urlData.publicUrl, path });
 }));
 
 export default router;
