@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Markdown from 'react-markdown';
 import { faq as faqApi } from '../lib/api';
 
@@ -36,6 +36,18 @@ export default function FaqManager() {
   }
 
   useEffect(() => { load(); }, []);
+
+  const grouped = useMemo(() => {
+    const map = new Map();
+    for (const f of faqs) {
+      const key = f.category?.trim() || 'General';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(f);
+    }
+    return Array.from(map.entries());
+  }, [faqs]);
+
+  const categoryCount = grouped.length;
 
   async function handleRefresh() {
     if (refreshing) return;
@@ -105,7 +117,7 @@ export default function FaqManager() {
   return (
     <div>
       <div className="info-box" style={{ marginBottom: 16 }}>
-        The public <code>/faq</code> page is generated from current knowledge base entries by Claude. Click <strong>Regenerate</strong> to wipe and rebuild it. Existing FAQ entries are deleted on every refresh.
+        The public <code>/faq</code> page is generated from current knowledge base entries by Claude. Click <strong>Regenerate</strong> to wipe and rebuild it. Claude picks 3-6 categories from the content and groups questions under them. Existing FAQ entries are deleted on every refresh.
       </div>
 
       <div style={{
@@ -118,6 +130,9 @@ export default function FaqManager() {
       }}>
         <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
           {faqs.length} FAQ entr{faqs.length === 1 ? 'y' : 'ies'}
+          {categoryCount > 0 && (
+            <> across {categoryCount} categor{categoryCount === 1 ? 'y' : 'ies'}</>
+          )}
           {lastGeneratedAt && (
             <> · last generated {formatDate(lastGeneratedAt)}</>
           )}
@@ -162,81 +177,101 @@ export default function FaqManager() {
           <p style={{ marginTop: 4 }}>Click <strong>Regenerate from KB</strong> to create them.</p>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {faqs.map((f) => {
-            const open = openId === f.id;
-            return (
-              <div
-                key={f.id}
-                style={{
-                  border: '1px solid var(--grey-100)',
-                  borderRadius: 'var(--radius-md)',
-                  background: 'var(--grey-0)',
-                }}
-              >
-                <button
-                  onClick={() => setOpenId(open ? null : f.id)}
-                  aria-expanded={open}
-                  style={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 12,
-                    padding: '12px 16px',
-                    background: 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    font: 'inherit',
-                    color: 'var(--grey-900)',
-                    fontWeight: 500,
-                  }}
-                >
-                  <span style={{ flex: 1 }}>{f.question}</span>
-                  {f.source_kb_ids?.length > 0 && (
-                    <span style={{
-                      fontSize: 11,
-                      color: 'var(--text-muted)',
-                      fontFamily: 'var(--font-mono)',
-                    }}>
-                      {f.source_kb_ids.length} source{f.source_kb_ids.length !== 1 ? 's' : ''}
-                    </span>
-                  )}
-                  <span style={{
-                    transition: 'transform 0.15s',
-                    transform: open ? 'rotate(180deg)' : 'rotate(0)',
-                    color: 'var(--text-muted)',
-                  }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <polyline points="6 9 12 15 18 9" />
-                    </svg>
-                  </span>
-                </button>
-                {open && (
-                  <div style={{
-                    padding: '0 16px 16px',
-                    borderTop: '1px solid var(--grey-100)',
-                    paddingTop: 12,
-                    color: 'var(--text-secondary)',
-                    fontSize: 14,
-                    lineHeight: 1.55,
-                  }}>
-                    <Markdown>{f.answer}</Markdown>
-                    {f.source_kb_ids?.length > 0 && (
-                      <div style={{
-                        marginTop: 12,
-                        fontSize: 11,
-                        color: 'var(--text-muted)',
-                        fontFamily: 'var(--font-mono)',
-                      }}>
-                        Source KB IDs: {f.source_kb_ids.join(', ')}
-                      </div>
-                    )}
-                  </div>
-                )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          {grouped.map(([category, items]) => (
+            <section key={category}>
+              <h3 style={{
+                margin: '0 0 8px',
+                fontSize: 11,
+                fontWeight: 600,
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+                color: 'var(--text-muted)',
+                fontFamily: 'var(--font-mono)',
+              }}>
+                {category}
+                <span style={{ marginLeft: 8, fontWeight: 400 }}>
+                  ({items.length})
+                </span>
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {items.map((f) => {
+                  const open = openId === f.id;
+                  return (
+                    <div
+                      key={f.id}
+                      style={{
+                        border: '1px solid var(--grey-100)',
+                        borderRadius: 'var(--radius-md)',
+                        background: 'var(--grey-0)',
+                      }}
+                    >
+                      <button
+                        onClick={() => setOpenId(open ? null : f.id)}
+                        aria-expanded={open}
+                        style={{
+                          width: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 12,
+                          padding: '12px 16px',
+                          background: 'transparent',
+                          border: 'none',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          font: 'inherit',
+                          color: 'var(--grey-900)',
+                          fontWeight: 500,
+                        }}
+                      >
+                        <span style={{ flex: 1 }}>{f.question}</span>
+                        {f.source_kb_ids?.length > 0 && (
+                          <span style={{
+                            fontSize: 11,
+                            color: 'var(--text-muted)',
+                            fontFamily: 'var(--font-mono)',
+                          }}>
+                            {f.source_kb_ids.length} source{f.source_kb_ids.length !== 1 ? 's' : ''}
+                          </span>
+                        )}
+                        <span style={{
+                          transition: 'transform 0.15s',
+                          transform: open ? 'rotate(180deg)' : 'rotate(0)',
+                          color: 'var(--text-muted)',
+                        }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <polyline points="6 9 12 15 18 9" />
+                          </svg>
+                        </span>
+                      </button>
+                      {open && (
+                        <div style={{
+                          padding: '0 16px 16px',
+                          borderTop: '1px solid var(--grey-100)',
+                          paddingTop: 12,
+                          color: 'var(--text-secondary)',
+                          fontSize: 14,
+                          lineHeight: 1.55,
+                        }}>
+                          <Markdown>{f.answer}</Markdown>
+                          {f.source_kb_ids?.length > 0 && (
+                            <div style={{
+                              marginTop: 12,
+                              fontSize: 11,
+                              color: 'var(--text-muted)',
+                              fontFamily: 'var(--font-mono)',
+                            }}>
+                              Source KB IDs: {f.source_kb_ids.join(', ')}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
+            </section>
+          ))}
         </div>
       )}
     </div>

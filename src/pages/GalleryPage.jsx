@@ -61,11 +61,11 @@ export default function GalleryPage() {
       </header>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '32px 24px' }}>
-        <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+        <div style={{ maxWidth: 900, margin: '0 auto' }}>
           <div style={{ marginBottom: 24 }}>
             <h1 style={{ margin: 0, fontSize: 28, fontWeight: 600 }}>Tutorials</h1>
             <p style={{ margin: '6px 0 0', color: 'var(--text-secondary)', fontSize: 14 }}>
-              Short walkthroughs for getting around the Prism video editor.
+              Short walkthroughs for getting around Prism
             </p>
           </div>
 

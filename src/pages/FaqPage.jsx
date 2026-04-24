@@ -46,6 +46,18 @@ export default function FaqPage() {
     );
   }, [faqs, search]);
 
+  // Group by category, preserving the order in which categories first appear
+  // (the server orders rows so this naturally reproduces Claude's intended order).
+  const grouped = useMemo(() => {
+    const map = new Map();
+    for (const f of filtered) {
+      const key = f.category?.trim() || 'General';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(f);
+    }
+    return Array.from(map.entries());
+  }, [filtered]);
+
   return (
     <div className="chat-page">
       <header className="chat-topbar">
@@ -115,63 +127,87 @@ export default function FaqPage() {
             </div>
           )}
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {filtered.map((f) => {
-              const open = openId === f.id;
-              return (
-                <div
-                  key={f.id}
-                  style={{
-                    border: '1px solid var(--grey-100)',
-                    borderRadius: 'var(--radius-md)',
-                    background: 'var(--grey-0)',
-                    overflow: 'hidden',
-                  }}
-                >
-                  <button
-                    onClick={() => setOpenId(open ? null : f.id)}
-                    aria-expanded={open}
-                    style={{
-                      width: '100%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 12,
-                      padding: '14px 16px',
-                      background: 'transparent',
-                      border: 'none',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      font: 'inherit',
-                      color: 'var(--grey-900)',
-                      fontWeight: 500,
-                    }}
-                  >
-                    <span style={{ flex: 1 }}>{f.question}</span>
-                    <span style={{
-                      transition: 'transform 0.15s',
-                      transform: open ? 'rotate(180deg)' : 'rotate(0)',
-                      color: 'var(--text-muted)',
-                    }}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <polyline points="6 9 12 15 18 9" />
-                      </svg>
-                    </span>
-                  </button>
-                  {open && (
-                    <div style={{
-                      padding: '0 16px 16px',
-                      borderTop: '1px solid var(--grey-100)',
-                      paddingTop: 16,
-                      color: 'var(--text-secondary)',
-                      lineHeight: 1.55,
-                      fontSize: 14,
-                    }}>
-                      <Markdown>{f.answer}</Markdown>
-                    </div>
-                  )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+            {grouped.map(([category, items]) => (
+              <section key={category}>
+                <h2 style={{
+                  margin: '0 0 10px',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  color: 'var(--text-muted)',
+                  fontFamily: 'var(--font-mono)',
+                }}>
+                  {category}
+                  <span style={{
+                    marginLeft: 8,
+                    color: 'var(--text-muted)',
+                    fontWeight: 400,
+                  }}>
+                    ({items.length})
+                  </span>
+                </h2>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {items.map((f) => {
+                    const open = openId === f.id;
+                    return (
+                      <div
+                        key={f.id}
+                        style={{
+                          border: '1px solid var(--grey-100)',
+                          borderRadius: 'var(--radius-md)',
+                          background: 'var(--grey-0)',
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <button
+                          onClick={() => setOpenId(open ? null : f.id)}
+                          aria-expanded={open}
+                          style={{
+                            width: '100%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 12,
+                            padding: '14px 16px',
+                            background: 'transparent',
+                            border: 'none',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            font: 'inherit',
+                            color: 'var(--grey-900)',
+                            fontWeight: 500,
+                          }}
+                        >
+                          <span style={{ flex: 1 }}>{f.question}</span>
+                          <span style={{
+                            transition: 'transform 0.15s',
+                            transform: open ? 'rotate(180deg)' : 'rotate(0)',
+                            color: 'var(--text-muted)',
+                          }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <polyline points="6 9 12 15 18 9" />
+                            </svg>
+                          </span>
+                        </button>
+                        {open && (
+                          <div style={{
+                            padding: '0 16px 16px',
+                            borderTop: '1px solid var(--grey-100)',
+                            paddingTop: 16,
+                            color: 'var(--text-secondary)',
+                            lineHeight: 1.55,
+                            fontSize: 14,
+                          }}>
+                            <Markdown>{f.answer}</Markdown>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              </section>
+            ))}
           </div>
         </div>
       </div>

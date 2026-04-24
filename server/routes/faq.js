@@ -39,7 +39,7 @@ async function setLastGeneratedAt(iso) {
 router.get('/', asyncHandler(async (_req, res) => {
   const { data, error } = await supabase
     .from('faq_entries')
-    .select('id, question, answer, source_kb_ids, display_order')
+    .select('id, question, answer, category, source_kb_ids, display_order')
     .order('display_order', { ascending: true })
     .order('id', { ascending: true });
 
@@ -106,12 +106,14 @@ router.post('/refresh', requireAuth, asyncHandler(async (_req, res) => {
 
 Below are the knowledge base entries. Produce between ${TARGET_FAQ_MIN} and ${TARGET_FAQ_MAX} high-value Q&A pairs that cover the most common, most useful, and most easily misunderstood aspects of the product. Prefer broad, beginner-to-intermediate questions over niche edge cases. Each answer should be self-contained, practical, and concise (1-4 short paragraphs, plain prose; markdown lists are allowed when helpful).
 
+Group the questions into between 3 and 6 short, intuitive CATEGORIES that emerge from the content (for example: "Getting Started", "Editing", "Export & Sharing", "Troubleshooting"). Use Title Case. Use the exact same category string for every question that belongs in that category. Order categories from most foundational to most advanced. Within each category, order questions from most common/foundational to more specific.
+
 For every Q&A, include the IDs of the KB entries you used as sources in source_kb_ids.
 
 Return ONLY valid JSON of this exact shape, with no markdown fences:
 {
   "faqs": [
-    { "question": "string", "answer": "string", "source_kb_ids": [number, ...] }
+    { "category": "string", "question": "string", "answer": "string", "source_kb_ids": [number, ...] }
   ]
 }
 
@@ -134,6 +136,10 @@ ${summaries.join('\n')}`;
     }
 
     const validIds = new Set(entries.map((e) => e.id));
+
+    // Preserve Claude's first-seen category order so the public page renders
+    // sections in the order Claude intended (foundational -> advanced).
+    const categoryOrder = new Map();
     const rows = faqs.map((f, idx) => {
       if (!f || typeof f.question !== 'string' || typeof f.answer !== 'string') {
         throw new Error(`FAQ entry at index ${idx} is malformed`);
@@ -143,18 +149,39 @@ ${summaries.join('\n')}`;
       if (!question || !answer) {
         throw new Error(`FAQ entry at index ${idx} has an empty question or answer`);
       }
+      const category = typeof f.category === 'string' && f.category.trim()
+        ? f.category.trim()
+        : null;
+      if (category && !categoryOrder.has(category)) {
+        categoryOrder.set(category, categoryOrder.size);
+      }
       const sources = Array.isArray(f.source_kb_ids)
         ? f.source_kb_ids
             .map((n) => Number.parseInt(n, 10))
             .filter((n) => Number.isInteger(n) && validIds.has(n))
         : [];
       return {
+        category,
         question,
         answer,
         source_kb_ids: sources,
-        display_order: idx,
+        // display_order encodes (categoryIndex * 1000) + indexWithinCategory so
+        // a single column orders both the section and the rows inside it.
+        _idx: idx,
       };
     });
+
+    // Re-rank rows: first by category order, then by their original index.
+    const perCategoryCount = new Map();
+    for (const row of rows) {
+      const catIdx = row.category ? categoryOrder.get(row.category) : categoryOrder.size;
+      const within = perCategoryCount.get(catIdx) ?? 0;
+      perCategoryCount.set(catIdx, within + 1);
+      row.display_order = catIdx * 1000 + within;
+    }
+    for (const row of rows) {
+      delete row._idx;
+    }
 
     send({ type: 'progress', message: `Replacing FAQ table with ${rows.length} entries...` });
 

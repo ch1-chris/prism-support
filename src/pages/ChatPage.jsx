@@ -291,7 +291,7 @@ export default function ChatPage() {
                 How can we help<br />you today?
               </h1>
               <p className="chat-hero-subtitle">
-                Ask anything about the video editor — from basic features to advanced workflows.
+                Ask anything — from basic features to advanced workflows.
               </p>
             </div>
 
