@@ -110,6 +110,13 @@ export const kb = {
     credentials: 'include',
   }),
 
+  listAuditRuns: (limit = 25) => request(`/api/kb/audit/runs?limit=${limit}`),
+  getAuditRunRevisions: (runId) => request(`/api/kb/audit/runs/${runId}/revisions`),
+  listRevisions: (limit = 50) => request(`/api/kb/audit/revisions?limit=${limit}`),
+  revertRevision: (id, includePair = true) =>
+    request(`/api/kb/audit/revisions/${id}/revert${includePair ? '?includePair=true' : ''}`, { method: 'POST' }),
+  revertAuditRun: (runId) => request(`/api/kb/audit/runs/${runId}/revert`, { method: 'POST' }),
+
   getVersions: () => request('/api/kb/meta/versions'),
 };
 

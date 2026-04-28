@@ -47,6 +47,9 @@ export default function AdminPage() {
   const [auditRunning, setAuditRunning] = useState(false);
   const [auditProgress, setAuditProgress] = useState('');
   const [auditResult, setAuditResult] = useState(null);
+  const [auditLive, setAuditLive] = useState({ applied: [], skipped: [] });
+  const [auditRuns, setAuditRuns] = useState([]);
+  const [revertingId, setRevertingId] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -72,12 +75,22 @@ export default function AdminPage() {
     }
   }, [search, sourceFilter, staleFilter]);
 
+  const loadAuditRuns = useCallback(async () => {
+    try {
+      const result = await kb.listAuditRuns(5);
+      setAuditRuns(result.runs || []);
+    } catch (err) {
+      console.error('Failed to load audit runs:', err);
+    }
+  }, []);
+
   useEffect(() => {
     if (authenticated) {
       loadEntries();
+      loadAuditRuns();
       kb.getVersions().then(setVersions).catch((err) => console.error('Failed to load versions:', err));
     }
-  }, [authenticated, loadEntries]);
+  }, [authenticated, loadEntries, loadAuditRuns]);
 
   function handleEntryAdded(entry) {
     setEntries((prev) => [entry, ...prev]);
@@ -107,6 +120,7 @@ export default function AdminPage() {
     setAuditRunning(true);
     setAuditProgress('Starting audit...');
     setAuditResult(null);
+    setAuditLive({ applied: [], skipped: [] });
     try {
       const response = await kb.audit();
       if (!response.ok) {
@@ -116,6 +130,20 @@ export default function AdminPage() {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+      const handleEvent = (event) => {
+        if (event.type === 'progress') setAuditProgress(event.message);
+        else if (event.type === 'applied') {
+          setAuditLive((prev) => ({ ...prev, applied: [...prev.applied, event] }));
+        } else if (event.type === 'skipped') {
+          setAuditLive((prev) => ({ ...prev, skipped: [...prev.skipped, event] }));
+        } else if (event.type === 'error') {
+          setAuditResult({ error: event.error, runId: event.runId });
+          setAuditProgress('');
+        } else if (event.type === 'done') {
+          setAuditResult(event);
+          setAuditProgress('');
+        }
+      };
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -124,23 +152,49 @@ export default function AdminPage() {
         buffer = lines.pop() || '';
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
-          const event = JSON.parse(line.slice(6));
-          if (event.type === 'progress') setAuditProgress(event.message);
-          if (event.type === 'done') {
-            setAuditResult(event);
-            setAuditProgress('');
-          }
+          handleEvent(JSON.parse(line.slice(6)));
         }
       }
       if (buffer.startsWith('data: ')) {
-        const event = JSON.parse(buffer.slice(6));
-        if (event.type === 'done') setAuditResult(event);
+        handleEvent(JSON.parse(buffer.slice(6)));
       }
       loadEntries();
+      loadAuditRuns();
     } catch (err) {
       setAuditResult({ error: err.message });
     } finally {
       setAuditRunning(false);
+    }
+  }
+
+  async function handleRevertRevision(revisionId) {
+    if (!confirm('Revert this audit change? The pre-merge entry will be restored.')) return;
+    setRevertingId(`rev-${revisionId}`);
+    try {
+      await kb.revertRevision(revisionId, true);
+      loadEntries();
+      loadAuditRuns();
+    } catch (err) {
+      alert(`Revert failed: ${err.message}`);
+    } finally {
+      setRevertingId(null);
+    }
+  }
+
+  async function handleRevertRun(runId) {
+    if (!confirm('Undo every change from this audit run? All merged entries will be restored and deleted entries will be reinserted.')) return;
+    setRevertingId(`run-${runId}`);
+    try {
+      const result = await kb.revertAuditRun(runId);
+      if (result.failed?.length) {
+        alert(`Reverted ${result.reverted.length} revisions; ${result.failed.length} failed:\n${result.failed.map(f => `#${f.revisionId}: ${f.error}`).join('\n')}`);
+      }
+      loadEntries();
+      loadAuditRuns();
+    } catch (err) {
+      alert(`Revert failed: ${err.message}`);
+    } finally {
+      setRevertingId(null);
     }
   }
 
@@ -310,38 +364,80 @@ export default function AdminPage() {
                 </button>
               </div>
 
-              {auditRunning && auditProgress && (
-                <div className="info-box" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span className="spinner" style={{ width: 16, height: 16 }}></span>
-                  {auditProgress}
+              {auditRunning && (
+                <div className="info-box" style={{ marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span className="spinner" style={{ width: 16, height: 16 }}></span>
+                    {auditProgress || 'Auditing…'}
+                  </div>
+                  {(auditLive.applied.length > 0 || auditLive.skipped.length > 0) && (
+                    <div style={{ fontSize: 12, marginTop: 6, color: 'var(--text-secondary)' }}>
+                      Applied {auditLive.applied.length} · Skipped {auditLive.skipped.length}
+                    </div>
+                  )}
                 </div>
               )}
 
               {auditResult && !auditResult.error && (
-                <div className="info-box" style={{ marginBottom: 12, borderLeft: `3px solid ${auditResult.clean ? 'var(--green)' : 'var(--prism-orange)'}` }}>
-                  <strong>{auditResult.clean ? 'KB is clean!' : 'Issues found'}</strong>
+                <div
+                  className="info-box"
+                  style={{
+                    marginBottom: 12,
+                    borderLeft: `3px solid ${auditResult.clean ? 'var(--green)' : 'var(--prism-orange)'}`,
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <strong>{auditResult.clean ? 'KB is clean!' : 'Audit complete'}</strong>
+                    {auditResult.runId && auditResult.applied?.length > 0 && (
+                      <button
+                        className="btn btn-sm"
+                        onClick={() => handleRevertRun(auditResult.runId)}
+                        disabled={revertingId === `run-${auditResult.runId}`}
+                      >
+                        {revertingId === `run-${auditResult.runId}` ? 'Undoing…' : 'Undo entire run'}
+                      </button>
+                    )}
+                  </div>
                   <div style={{ fontSize: 13, marginTop: 4 }}>
                     Scanned {auditResult.total} entries.
-                    {auditResult.duplicates?.length > 0 && <span> {auditResult.duplicates.length} duplicate{auditResult.duplicates.length !== 1 ? 's' : ''} detected.</span>}
-                    {auditResult.contradictions?.length > 0 && <span> {auditResult.contradictions.length} contradiction{auditResult.contradictions.length !== 1 ? 's' : ''} flagged as stale.</span>}
+                    {auditResult.totals && (
+                      <span> {auditResult.totals.merged} merged, {auditResult.totals.deleted} deleted, {auditResult.totals.skipped} skipped.</span>
+                    )}
                     {auditResult.clean && <span> No duplicates or contradictions found.</span>}
                   </div>
-                  {auditResult.duplicates?.length > 0 && (
-                    <details style={{ marginTop: 8, fontSize: 13 }}>
-                      <summary style={{ cursor: 'pointer' }}>Duplicates ({auditResult.duplicates.length})</summary>
-                      <ul style={{ marginTop: 4, paddingLeft: 16 }}>
-                        {auditResult.duplicates.map((d, i) => (
-                          <li key={i}>Keep #{d.keep_id}, remove #{d.remove_id} — {d.reason}</li>
+                  {auditResult.applied?.length > 0 && (
+                    <details style={{ marginTop: 8, fontSize: 13 }} open>
+                      <summary style={{ cursor: 'pointer' }}>
+                        Changes applied ({auditResult.applied.length})
+                      </summary>
+                      <ul style={{ marginTop: 4, paddingLeft: 16, listStyle: 'none' }}>
+                        {auditResult.applied.map((a, i) => (
+                          <li key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '4px 0' }}>
+                            <span>
+                              <span className="badge badge-default" style={{ marginRight: 6 }}>{a.pair?.kind || 'pair'}</span>
+                              {a.noop ? 'Deleted #' : 'Merged #'}
+                              {a.pair?.redundantId} {a.noop ? '' : `→ #${a.pair?.keepId}`} — {a.summary}
+                            </span>
+                            <button
+                              className="btn btn-sm"
+                              onClick={() => handleRevertRevision(a.updateRevisionId || a.deleteRevisionId)}
+                              disabled={revertingId === `rev-${a.updateRevisionId || a.deleteRevisionId}`}
+                            >
+                              {revertingId === `rev-${a.updateRevisionId || a.deleteRevisionId}` ? 'Reverting…' : 'Revert'}
+                            </button>
+                          </li>
                         ))}
                       </ul>
                     </details>
                   )}
-                  {auditResult.contradictions?.length > 0 && (
+                  {auditResult.skipped?.length > 0 && (
                     <details style={{ marginTop: 8, fontSize: 13 }}>
-                      <summary style={{ cursor: 'pointer' }}>Contradictions ({auditResult.contradictions.length})</summary>
+                      <summary style={{ cursor: 'pointer' }}>Skipped ({auditResult.skipped.length})</summary>
                       <ul style={{ marginTop: 4, paddingLeft: 16 }}>
-                        {auditResult.contradictions.map((c, i) => (
-                          <li key={i}>Keep #{c.keep_id}, stale #{c.stale_id} — {c.conflict}</li>
+                        {auditResult.skipped.map((s, i) => (
+                          <li key={i}>
+                            #{s.pair?.keepId} & #{s.pair?.redundantId} ({s.pair?.kind}) — {s.reason}
+                          </li>
                         ))}
                       </ul>
                     </details>
@@ -351,6 +447,41 @@ export default function AdminPage() {
 
               {auditResult?.error && (
                 <div className="error-banner" style={{ marginBottom: 12 }}>{auditResult.error}</div>
+              )}
+
+              {auditRuns.length > 0 && !auditRunning && (
+                <details className="info-box" style={{ marginBottom: 12, fontSize: 13 }}>
+                  <summary style={{ cursor: 'pointer' }}>Recent audit runs ({auditRuns.length})</summary>
+                  <ul style={{ marginTop: 6, paddingLeft: 0, listStyle: 'none' }}>
+                    {auditRuns.map((r) => {
+                      const started = new Date(r.started_at).toLocaleString();
+                      const inflight = !r.finished_at;
+                      return (
+                        <li
+                          key={r.id}
+                          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '4px 0', borderBottom: '1px solid var(--border)' }}
+                        >
+                          <span>
+                            {started} —{' '}
+                            {inflight
+                              ? <em>in progress</em>
+                              : <>{r.total_merged} merged, {r.total_deleted} deleted, {r.total_skipped} skipped</>}
+                            {r.error && <span style={{ color: 'var(--prism-orange)', marginLeft: 6 }}>(error: {r.error})</span>}
+                          </span>
+                          {!inflight && r.total_deleted > 0 && (
+                            <button
+                              className="btn btn-sm"
+                              onClick={() => handleRevertRun(r.id)}
+                              disabled={revertingId === `run-${r.id}`}
+                            >
+                              {revertingId === `run-${r.id}` ? 'Undoing…' : 'Undo run'}
+                            </button>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </details>
               )}
 
               {entries.length === 0 ? (

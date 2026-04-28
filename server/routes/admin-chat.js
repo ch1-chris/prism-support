@@ -162,6 +162,7 @@ router.post('/stream', upload.array('files', 10), asyncHandler(async (req, res) 
   const { data: kbEntries, error: kbError } = await supabase
     .from('kb_entries')
     .select('title, feature_name, ui_location, how_to_access, keyboard_shortcut, content, common_issues, related_features, version')
+    .or('is_stale.is.null,is_stale.eq.false')
     .order('created_at', { ascending: false });
   if (kbError) throw new Error(`Failed to load KB entries: ${kbError.message}`);
 

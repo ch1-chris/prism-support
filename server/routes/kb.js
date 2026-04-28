@@ -6,7 +6,7 @@ import { randomUUID } from 'crypto';
 import Anthropic from '@anthropic-ai/sdk';
 import sharp from 'sharp';
 import { supabase } from '../db.js';
-import { embedAndStoreEntry } from '../embeddings.js';
+import { embedAndStoreEntry, generateEmbedding } from '../embeddings.js';
 import { upload, videoUpload } from '../upload.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { extractFrames, readFrameAsBase64, getFramesForSegment, cleanupFrames, ensureTmpDir } from '../frames.js';
@@ -841,49 +841,178 @@ router.post('/cleanup-files', asyncHandler(async (_req, res) => {
   res.json(result);
 }));
 
-// --- KB audit: scan for duplicates and contradictions ---
+// --- KB audit: scan for duplicates and contradictions, then surgically merge ---
+//
+// Phase 1 asks the model to classify pairs of entries as duplicates or
+// contradictions. Phase 2 asks the model, per pair, to produce a surgical
+// merge of the redundant entry into the keep entry. We snapshot both rows to
+// kb_entry_revisions before mutating, so every audit-applied change can be
+// reverted from the admin UI.
+//
+// We never silently swallow errors: per-pair failures are reported as
+// `skipped` items in the SSE stream with the throwing error message so an
+// admin can investigate, and the run continues with subsequent pairs.
+
 const AUDIT_BATCH_SIZE = 40;
 
-router.post('/audit', asyncHandler(async (req, res) => {
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    Connection: 'keep-alive',
+// Sanity-check thresholds for the merge step. The intent of "surgical" is
+// captured by demanding that most of the original keep content survives in
+// the merged version verbatim and that the merged length stays within a
+// reasonable envelope of the original.
+const MERGE_MIN_WORD_OVERLAP = 0.7;
+const MERGE_MAX_LENGTH_RATIO = 5;
+const MERGE_MIN_LENGTH_RATIO = 0.85;
+
+const STRUCTURED_MERGE_FIELDS = [
+  'feature_name',
+  'ui_location',
+  'how_to_access',
+  'keyboard_shortcut',
+  'common_issues',
+  'related_features',
+];
+
+function tokenize(text) {
+  if (!text) return [];
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function wordOverlapRatio(original, merged) {
+  const originalTokens = tokenize(original);
+  if (originalTokens.length === 0) return 1;
+  const mergedSet = new Set(tokenize(merged));
+  let hits = 0;
+  for (const tok of originalTokens) {
+    if (mergedSet.has(tok)) hits++;
+  }
+  return hits / originalTokens.length;
+}
+
+function validateMergedContent(keepEntry, merged) {
+  const original = keepEntry.content || '';
+  const candidate = merged.merged_content;
+
+  if (typeof candidate !== 'string' || !candidate.trim()) {
+    throw new Error('merge response had empty merged_content');
+  }
+
+  const ratio = candidate.length / Math.max(original.length, 1);
+  if (ratio < MERGE_MIN_LENGTH_RATIO) {
+    throw new Error(`merged content is ${(ratio * 100).toFixed(0)}% the length of the original (min ${(MERGE_MIN_LENGTH_RATIO * 100).toFixed(0)}%)`);
+  }
+  if (ratio > MERGE_MAX_LENGTH_RATIO) {
+    throw new Error(`merged content is ${ratio.toFixed(1)}x the length of the original (max ${MERGE_MAX_LENGTH_RATIO}x)`);
+  }
+
+  const overlap = wordOverlapRatio(original, candidate);
+  if (overlap < MERGE_MIN_WORD_OVERLAP) {
+    throw new Error(`merged content preserves only ${(overlap * 100).toFixed(0)}% of original words (min ${(MERGE_MIN_WORD_OVERLAP * 100).toFixed(0)}%)`);
+  }
+}
+
+function buildMergePrompt(keepEntry, redundantEntry, kind, reason) {
+  const keepStruct = {};
+  const redundantStruct = {};
+  for (const f of STRUCTURED_MERGE_FIELDS) {
+    keepStruct[f] = keepEntry[f] ?? null;
+    redundantStruct[f] = redundantEntry[f] ?? null;
+  }
+
+  return `You are surgically updating knowledge-base entry KEEP to absorb still-relevant
+information from entry REDUNDANT, then REDUNDANT will be deleted. Both describe the
+same feature in a video editing application.
+
+Pair classification: ${kind}
+Auditor's reason: ${reason}
+
+Rules:
+- Preserve KEEP's existing wording, headings, lists, sentence order, and tone wherever possible.
+- Only insert sentences/paragraphs from REDUNDANT that contain facts NOT already in KEEP.
+- KEEP is the more recent source of truth. If REDUNDANT contains facts that contradict KEEP, drop those facts entirely — do NOT merge them.
+- Do not paraphrase or "improve" KEEP's existing prose. Surgical insertions only.
+- For structured fields, prefer KEEP's value; only fill in from REDUNDANT when KEEP's value is null/empty AND REDUNDANT's value is plausibly still accurate.
+- For related_features, return the union with no duplicates.
+- If REDUNDANT has nothing unique to add, set "noop": true and return KEEP's content unchanged.
+
+KEEP entry (id ${keepEntry.id}, updated ${keepEntry.updated_at}):
+Title: ${keepEntry.title}
+Structured: ${JSON.stringify(keepStruct)}
+Content:
+"""
+${keepEntry.content}
+"""
+
+REDUNDANT entry (id ${redundantEntry.id}, updated ${redundantEntry.updated_at}):
+Title: ${redundantEntry.title}
+Structured: ${JSON.stringify(redundantStruct)}
+Content:
+"""
+${redundantEntry.content}
+"""
+
+Return ONLY valid JSON, no markdown fences:
+{
+  "merged_content": "<full new content for KEEP>",
+  "merged_fields": {
+    "feature_name": "...",
+    "ui_location": "...",
+    "how_to_access": "...",
+    "keyboard_shortcut": "...",
+    "common_issues": "...",
+    "related_features": ["..."]
+  },
+  "summary": "1-sentence description of what was added, or 'no changes needed'",
+  "noop": true|false
+}`;
+}
+
+async function callMergeModel(keepEntry, redundantEntry, kind, reason) {
+  const response = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 6000,
+    messages: [{
+      role: 'user',
+      content: buildMergePrompt(keepEntry, redundantEntry, kind, reason),
+    }],
   });
+  return parseJSON(response.content[0].text);
+}
 
-  function send(obj) {
-    res.write(`data: ${JSON.stringify(obj)}\n\n`);
+function buildMergedFields(keepEntry, mergedFields) {
+  const updates = {};
+  for (const f of STRUCTURED_MERGE_FIELDS) {
+    if (!(f in mergedFields)) continue;
+    const value = mergedFields[f];
+    if (f === 'related_features') {
+      const arr = Array.isArray(value) ? value.filter(v => typeof v === 'string' && v.trim()) : [];
+      updates[f] = Array.from(new Set([...(keepEntry.related_features || []), ...arr]));
+    } else if (typeof value === 'string') {
+      updates[f] = value.trim() || null;
+    } else if (value === null) {
+      updates[f] = null;
+    }
   }
+  return updates;
+}
 
-  send({ type: 'progress', message: 'Fetching knowledge base entries...' });
-
-  const { data: allEntries, error } = await supabase
-    .from('kb_entries')
-    .select('id, title, feature_name, content, source, version, created_at, updated_at, is_stale')
-    .order('updated_at', { ascending: false });
-
-  if (error) throw new Error(`Failed to fetch entries: ${error.message}`);
-  if (!allEntries || allEntries.length === 0) {
-    send({ type: 'done', duplicates: [], contradictions: [], clean: true, total: 0 });
-    res.end();
-    return;
-  }
-
-  send({ type: 'progress', message: `Analyzing ${allEntries.length} entries for duplicates and contradictions...` });
-
+async function classifyEntries(allEntries, send) {
   const summaries = allEntries.map(e =>
     `[ID:${e.id}] (updated: ${e.updated_at}) ${e.title}${e.feature_name ? ` | Feature: ${e.feature_name}` : ''} | Source: ${e.source} | Content: ${e.content.slice(0, 200)}`
   );
 
-  const allDuplicates = [];
-  const allContradictions = [];
+  const duplicates = [];
+  const contradictions = [];
 
   for (let i = 0; i < summaries.length; i += AUDIT_BATCH_SIZE) {
     const batch = summaries.slice(i, i + AUDIT_BATCH_SIZE);
     const batchNum = Math.floor(i / AUDIT_BATCH_SIZE) + 1;
     const totalBatches = Math.ceil(summaries.length / AUDIT_BATCH_SIZE);
 
-    send({ type: 'progress', message: `Scanning batch ${batchNum}/${totalBatches}...` });
+    send({ type: 'progress', message: `Scanning batch ${batchNum}/${totalBatches} for duplicates and contradictions...` });
 
     const auditResponse = await anthropic.messages.create({
       model: MODEL,
@@ -911,32 +1040,427 @@ Return ONLY valid JSON, no markdown fences.`,
     });
 
     const batchResult = parseJSON(auditResponse.content[0].text);
-    allDuplicates.push(...(batchResult.duplicates || []));
-    allContradictions.push(...(batchResult.contradictions || []));
+    duplicates.push(...(batchResult.duplicates || []));
+    contradictions.push(...(batchResult.contradictions || []));
   }
 
-  let flaggedCount = 0;
-  for (const c of allContradictions) {
-    if (c.stale_id) {
-      const { error: flagError } = await supabase
-        .from('kb_entries')
-        .update({ is_stale: true, stale_reason: c.conflict })
-        .eq('id', c.stale_id);
-      if (flagError) console.error(`[Audit] Failed to flag entry ${c.stale_id}:`, flagError.message);
-      else flaggedCount++;
+  return { duplicates, contradictions };
+}
+
+function normalisePairs(duplicates, contradictions, entryById) {
+  const pairs = [];
+  const seen = new Set();
+
+  function pushPair(keepId, redundantId, kind, reason) {
+    if (!keepId || !redundantId || keepId === redundantId) return;
+    if (!entryById.has(keepId) || !entryById.has(redundantId)) return;
+    const key = `${Math.min(keepId, redundantId)}:${Math.max(keepId, redundantId)}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    pairs.push({ keepId, redundantId, kind, reason });
+  }
+
+  for (const d of duplicates) pushPair(d.keep_id, d.remove_id, 'duplicate', d.reason || 'duplicate entry');
+  for (const c of contradictions) pushPair(c.keep_id, c.stale_id, 'contradiction', c.conflict || 'contradicting entry');
+
+  return pairs;
+}
+
+async function startAuditRun() {
+  const { data: existing, error: lockError } = await supabase
+    .from('kb_audit_runs')
+    .select('id, started_at')
+    .is('finished_at', null)
+    .order('started_at', { ascending: false })
+    .limit(1);
+
+  if (lockError) throw new Error(`Failed to check for in-progress audit: ${lockError.message}`);
+  if (existing && existing.length > 0) {
+    const inflight = existing[0];
+    const ageMs = Date.now() - new Date(inflight.started_at).getTime();
+    const STALE_LOCK_MS = 30 * 60 * 1000;
+    if (ageMs < STALE_LOCK_MS) {
+      const err = new Error(`An audit is already in progress (started ${inflight.started_at})`);
+      err.statusCode = 409;
+      throw err;
+    }
+    const { error: closeError } = await supabase
+      .from('kb_audit_runs')
+      .update({ finished_at: new Date().toISOString(), error: 'abandoned (no heartbeat)' })
+      .eq('id', inflight.id);
+    if (closeError) throw new Error(`Failed to clear stale audit lock: ${closeError.message}`);
+  }
+
+  const { data: created, error: insertError } = await supabase
+    .from('kb_audit_runs')
+    .insert({})
+    .select()
+    .single();
+  if (insertError) throw new Error(`Failed to start audit run: ${insertError.message}`);
+  return created;
+}
+
+async function finishAuditRun(runId, totals, errorMessage) {
+  const { error } = await supabase
+    .from('kb_audit_runs')
+    .update({
+      finished_at: new Date().toISOString(),
+      total_scanned: totals.scanned,
+      total_merged: totals.merged,
+      total_deleted: totals.deleted,
+      total_skipped: totals.skipped,
+      summary: totals.summary || null,
+      error: errorMessage || null,
+    })
+    .eq('id', runId);
+  if (error) console.error(`[Audit] Failed to finalize run ${runId}:`, error.message);
+}
+
+async function snapshotRevision({ runId, entryId, pairedEntryId, operation, snapshot, reason, summary }) {
+  const { data, error } = await supabase
+    .from('kb_entry_revisions')
+    .insert({
+      audit_run_id: runId,
+      entry_id: entryId,
+      paired_entry_id: pairedEntryId,
+      operation,
+      snapshot,
+      reason,
+      summary,
+    })
+    .select()
+    .single();
+  if (error) throw new Error(`Failed to write revision snapshot: ${error.message}`);
+  return data;
+}
+
+async function applyMerge({ runId, pair, keepEntry, redundantEntry, mergeResult, send }) {
+  const noop = mergeResult.noop === true;
+  if (!noop) validateMergedContent(keepEntry, mergeResult);
+
+  // Compute the embedding BEFORE we touch the database so an embedding
+  // failure does not leave the keep entry with stale vectors.
+  const updates = { is_stale: false, stale_reason: null };
+  if (!noop) {
+    Object.assign(updates, buildMergedFields(keepEntry, mergeResult.merged_fields || {}));
+    updates.content = mergeResult.merged_content;
+    updates.updated_at = new Date().toISOString();
+    const embedding = await generateEmbedding(`${keepEntry.title} ${mergeResult.merged_content}`);
+    if (embedding) updates.embedding = embedding;
+  }
+
+  const summary = mergeResult.summary || (noop ? 'no changes needed' : 'merged');
+
+  const updateRevision = await snapshotRevision({
+    runId,
+    entryId: keepEntry.id,
+    pairedEntryId: redundantEntry.id,
+    operation: 'merge_update',
+    snapshot: keepEntry,
+    reason: `${pair.kind}: ${pair.reason}`,
+    summary,
+  });
+
+  const deleteRevision = await snapshotRevision({
+    runId,
+    entryId: redundantEntry.id,
+    pairedEntryId: keepEntry.id,
+    operation: 'merge_delete',
+    snapshot: redundantEntry,
+    reason: `${pair.kind}: ${pair.reason}`,
+    summary,
+  });
+
+  if (!noop) {
+    const { error: updateError } = await supabase
+      .from('kb_entries')
+      .update(updates)
+      .eq('id', keepEntry.id);
+    if (updateError) throw new Error(`Failed to update keep entry ${keepEntry.id}: ${updateError.message}`);
+  }
+
+  const { error: deleteError } = await supabase
+    .from('kb_entries')
+    .delete()
+    .eq('id', redundantEntry.id);
+  if (deleteError) throw new Error(`Failed to delete redundant entry ${redundantEntry.id}: ${deleteError.message}`);
+
+  send({
+    type: 'applied',
+    pair: { keepId: keepEntry.id, redundantId: redundantEntry.id, kind: pair.kind },
+    noop,
+    summary,
+    updateRevisionId: updateRevision.id,
+    deleteRevisionId: deleteRevision.id,
+  });
+
+  return { noop, updateRevisionId: updateRevision.id, deleteRevisionId: deleteRevision.id, summary };
+}
+
+router.post('/audit', asyncHandler(async (req, res) => {
+  let runRecord;
+  try {
+    runRecord = await startAuditRun();
+  } catch (err) {
+    if (err.statusCode === 409) {
+      res.status(409).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+  const runId = runRecord.id;
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+  });
+
+  function send(obj) {
+    res.write(`data: ${JSON.stringify(obj)}\n\n`);
+  }
+
+  const totals = { scanned: 0, merged: 0, deleted: 0, skipped: 0, summary: null };
+  let runError = null;
+
+  try {
+    send({ type: 'progress', runId, message: 'Fetching knowledge base entries...' });
+
+    const { data: allEntries, error } = await supabase
+      .from('kb_entries')
+      .select('*')
+      .order('updated_at', { ascending: false });
+
+    if (error) throw new Error(`Failed to fetch entries: ${error.message}`);
+    totals.scanned = allEntries?.length || 0;
+
+    if (!allEntries || allEntries.length === 0) {
+      send({ type: 'done', runId, applied: [], skipped: [], total: 0, clean: true });
+      res.end();
+      return;
+    }
+
+    const entryById = new Map(allEntries.map(e => [e.id, e]));
+    send({ type: 'progress', runId, message: `Analyzing ${allEntries.length} entries for duplicates and contradictions...` });
+
+    const { duplicates, contradictions } = await classifyEntries(allEntries, send);
+    const pairs = normalisePairs(duplicates, contradictions, entryById);
+
+    if (pairs.length === 0) {
+      totals.summary = 'no duplicates or contradictions detected';
+      send({ type: 'done', runId, applied: [], skipped: [], total: allEntries.length, clean: true });
+      res.end();
+      return;
+    }
+
+    send({ type: 'progress', runId, message: `Identified ${pairs.length} pair${pairs.length === 1 ? '' : 's'}; merging surgically...` });
+
+    const applied = [];
+    const skipped = [];
+    const consumed = new Set();
+
+    for (let i = 0; i < pairs.length; i++) {
+      const pair = pairs[i];
+      send({ type: 'progress', runId, message: `Merging pair ${i + 1}/${pairs.length} (keep #${pair.keepId}, redundant #${pair.redundantId})...` });
+
+      if (consumed.has(pair.keepId) || consumed.has(pair.redundantId)) {
+        const reason = 'one of the entries was already consumed by an earlier merge in this run';
+        skipped.push({ pair, reason });
+        send({ type: 'skipped', pair: { keepId: pair.keepId, redundantId: pair.redundantId, kind: pair.kind }, reason });
+        totals.skipped++;
+        continue;
+      }
+
+      const keepEntry = entryById.get(pair.keepId);
+      const redundantEntry = entryById.get(pair.redundantId);
+
+      try {
+        const mergeResult = await callMergeModel(keepEntry, redundantEntry, pair.kind, pair.reason);
+        const result = await applyMerge({ runId, pair, keepEntry, redundantEntry, mergeResult, send });
+        applied.push({ pair, ...result });
+        if (!result.noop) totals.merged++;
+        totals.deleted++;
+        consumed.add(pair.keepId);
+        consumed.add(pair.redundantId);
+        entryById.delete(pair.redundantId);
+      } catch (pairErr) {
+        const reason = pairErr.message || String(pairErr);
+        skipped.push({ pair, reason });
+        send({ type: 'skipped', pair: { keepId: pair.keepId, redundantId: pair.redundantId, kind: pair.kind }, reason });
+        totals.skipped++;
+        console.error(`[Audit] Pair (${pair.keepId}, ${pair.redundantId}) skipped:`, pairErr);
+      }
+    }
+
+    totals.summary = `${totals.merged} merged, ${totals.deleted} deleted, ${totals.skipped} skipped`;
+
+    send({
+      type: 'done',
+      runId,
+      applied: applied.map(a => ({
+        pair: a.pair,
+        noop: a.noop,
+        summary: a.summary,
+        updateRevisionId: a.updateRevisionId,
+        deleteRevisionId: a.deleteRevisionId,
+      })),
+      skipped,
+      total: allEntries.length,
+      totals,
+      clean: applied.length === 0 && skipped.length === 0,
+    });
+  } catch (err) {
+    runError = err.message || String(err);
+    console.error('[Audit] Run failed:', err);
+    send({ type: 'error', runId, error: runError });
+  } finally {
+    await finishAuditRun(runId, totals, runError);
+    res.end();
+  }
+}));
+
+// --- Audit run history ---
+router.get('/audit/runs', asyncHandler(async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 25, 100);
+  const { data, error } = await supabase
+    .from('kb_audit_runs')
+    .select('*')
+    .order('started_at', { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`Failed to list audit runs: ${error.message}`);
+  res.json({ runs: data || [] });
+}));
+
+router.get('/audit/runs/:runId/revisions', asyncHandler(async (req, res) => {
+  const { data, error } = await supabase
+    .from('kb_entry_revisions')
+    .select('*')
+    .eq('audit_run_id', req.params.runId)
+    .order('created_at', { ascending: true });
+  if (error) throw new Error(`Failed to list revisions: ${error.message}`);
+  res.json({ revisions: data || [] });
+}));
+
+router.get('/audit/revisions', asyncHandler(async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+  const { data, error } = await supabase
+    .from('kb_entry_revisions')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`Failed to list revisions: ${error.message}`);
+  res.json({ revisions: data || [] });
+}));
+
+// Restore the snapshot stored on a revision. For merge_update, we restore the
+// keep entry's pre-merge state; for merge_delete, we re-insert the deleted
+// row preserving its original id so any references survive. Embeddings are
+// generated up-front and written together with the row mutation so a failure
+// can never leave the row out of sync with its vector.
+async function revertRevision(revision) {
+  if (revision.reverted_at) {
+    throw new Error(`Revision ${revision.id} has already been reverted`);
+  }
+
+  const snapshot = revision.snapshot || {};
+  const { id, title_content_fts: _ignoreFts, embedding: snapshotEmbedding, ...restorable } = snapshot;
+  if (!id) throw new Error(`Revision ${revision.id} snapshot is missing the entry id`);
+
+  const text = `${restorable.title || ''} ${restorable.content || ''}`;
+  const embedding = snapshotEmbedding || (await generateEmbedding(text));
+  const restoredRow = { ...restorable };
+  if (embedding) restoredRow.embedding = embedding;
+
+  if (revision.operation === 'merge_update') {
+    const { error: updateError } = await supabase
+      .from('kb_entries')
+      .update({
+        ...restoredRow,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id);
+    if (updateError) throw new Error(`Failed to restore entry ${id}: ${updateError.message}`);
+  } else if (revision.operation === 'merge_delete') {
+    const { data: existing } = await supabase
+      .from('kb_entries')
+      .select('id')
+      .eq('id', id)
+      .maybeSingle();
+    if (existing) throw new Error(`Cannot restore entry ${id}: an entry with that id already exists`);
+
+    const { error: insertError } = await supabase
+      .from('kb_entries')
+      .insert({ id, ...restoredRow });
+    if (insertError) throw new Error(`Failed to restore deleted entry ${id}: ${insertError.message}`);
+  } else {
+    throw new Error(`Unknown revision operation: ${revision.operation}`);
+  }
+
+  const { error: markError } = await supabase
+    .from('kb_entry_revisions')
+    .update({ reverted_at: new Date().toISOString() })
+    .eq('id', revision.id);
+  if (markError) throw new Error(`Restored entry ${id} but failed to mark revision ${revision.id} reverted: ${markError.message}`);
+}
+
+router.post('/audit/revisions/:id/revert', asyncHandler(async (req, res) => {
+  const { data: revision, error: fetchError } = await supabase
+    .from('kb_entry_revisions')
+    .select('*')
+    .eq('id', req.params.id)
+    .single();
+  if (fetchError) throw new Error(`Revision not found: ${fetchError.message}`);
+
+  await revertRevision(revision);
+
+  let pairedReverted = null;
+  if (req.query.includePair === 'true' && revision.paired_entry_id) {
+    const { data: pairedRevisions } = await supabase
+      .from('kb_entry_revisions')
+      .select('*')
+      .eq('audit_run_id', revision.audit_run_id)
+      .eq('entry_id', revision.paired_entry_id)
+      .is('reverted_at', null)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (pairedRevisions && pairedRevisions.length > 0) {
+      await revertRevision(pairedRevisions[0]);
+      pairedReverted = pairedRevisions[0].id;
     }
   }
 
-  send({
-    type: 'done',
-    duplicates: allDuplicates,
-    contradictions: allContradictions,
-    flagged: flaggedCount,
-    total: allEntries.length,
-    clean: allDuplicates.length === 0 && allContradictions.length === 0,
+  res.json({ ok: true, revisionId: revision.id, pairedReverted });
+}));
+
+router.post('/audit/runs/:runId/revert', asyncHandler(async (req, res) => {
+  const { data: revisions, error } = await supabase
+    .from('kb_entry_revisions')
+    .select('*')
+    .eq('audit_run_id', req.params.runId)
+    .is('reverted_at', null)
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(`Failed to load run revisions: ${error.message}`);
+
+  const reverted = [];
+  const failed = [];
+
+  // Revert deletes before updates so re-inserted rows exist before any
+  // foreign references (e.g. analytics matched_kb arrays) need them.
+  const ordered = [...(revisions || [])].sort((a, b) => {
+    if (a.operation === b.operation) return 0;
+    return a.operation === 'merge_delete' ? -1 : 1;
   });
 
-  res.end();
+  for (const rev of ordered) {
+    try {
+      await revertRevision(rev);
+      reverted.push(rev.id);
+    } catch (err) {
+      failed.push({ revisionId: rev.id, error: err.message });
+    }
+  }
+
+  res.json({ ok: failed.length === 0, reverted, failed });
 }));
 
 export default router;
