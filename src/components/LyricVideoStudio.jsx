@@ -605,6 +605,8 @@ export default function LyricVideoStudio({ embedded = false }) {
 
   // Style controls
   const [paletteKey, setPaletteKey] = useState('teal');
+  const [styleKey, setStyleKey] = useState('karaoke');
+  const [aspectKey, setAspectKey] = useState('16:9');
   const [scaleKey, setScaleKey] = useState('m');
 
   // AI suggestion
