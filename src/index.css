@@ -1884,3 +1884,7 @@ select:focus-visible {
   .followups { padding-left: 0; }
   .stats-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* Tailwind utilities for LyricVideoStudio (preflight disabled in tailwind.config.js) */
+@tailwind components;
+@tailwind utilities;

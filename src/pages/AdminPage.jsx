@@ -13,6 +13,11 @@ import AdminChat from '../components/AdminChat';
 import MediaBrowser from '../components/MediaBrowser';
 import TutorialsManager from '../components/TutorialsManager';
 import FaqManager from '../components/FaqManager';
+import LyricVideoStudio from '../components/LyricVideoStudio';
+
+const NAV_EMBEDDED_TABS = {
+  'lyric-studio': { label: 'Lyric video studio', icon: '🎵', color: '#F266FF' },
+};
 
 const TABS = [
   { id: 'dashboard', label: 'Dashboard', icon: '◈', color: '#2ED6E5' },
@@ -272,6 +277,35 @@ export default function AdminPage() {
           Thumbnail generator
         </a>
         <div
+          className={`sidebar-link ${activeTab === 'lyric-studio' ? 'active' : ''}`}
+          role="button"
+          tabIndex={0}
+          style={
+            activeTab === 'lyric-studio'
+              ? {
+                  color: NAV_EMBEDDED_TABS['lyric-studio'].color,
+                  borderLeftColor: NAV_EMBEDDED_TABS['lyric-studio'].color,
+                }
+              : undefined
+          }
+          onClick={() => {
+            setActiveTab('lyric-studio');
+            setSidebarOpen(false);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setActiveTab('lyric-studio');
+              setSidebarOpen(false);
+            }
+          }}
+        >
+          <span style={{ width: 16, textAlign: 'center', fontSize: 14 }}>
+            {NAV_EMBEDDED_TABS['lyric-studio'].icon}
+          </span>
+          {NAV_EMBEDDED_TABS['lyric-studio'].label}
+        </div>
+        <div
           className="sidebar-link"
           role="button"
           tabIndex={0}
@@ -295,7 +329,7 @@ export default function AdminPage() {
           >
             ☰
           </button>
-          <h1>{TABS.find((t) => t.id === activeTab)?.label}</h1>
+          <h1>{(NAV_EMBEDDED_TABS[activeTab]?.label) ?? TABS.find((t) => t.id === activeTab)?.label}</h1>
           {['upload', 'changelog', 'describe', 'bulk'].includes(activeTab) && (
             <div className="selectors-row" style={{ marginLeft: 'auto' }}>
               <label style={{ margin: 0, fontSize: 12 }}>Version:</label>
@@ -552,6 +586,7 @@ export default function AdminPage() {
           {activeTab === 'autofetch' && <AutoFetchConfig />}
           {activeTab === 'tests' && <KBTestRunner />}
           {activeTab === 'tickets' && <SupportTickets />}
+          {activeTab === 'lyric-studio' && <LyricVideoStudio embedded />}
         </div>
       </div>
     </div>
