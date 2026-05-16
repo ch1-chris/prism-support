@@ -9,8 +9,8 @@ const ELEVEN_MODEL_ID = 'eleven_v3';
 
 const PALETTE_KEYS = ['teal', 'magenta', 'purple', 'orange', 'blue', 'green', 'gold', 'mono'].join(', ');
 const STYLE_KEYS = [
-  'karaoke', 'spotlight', 'cascade', 'subtitle', 'mono_callout',
-  'plain_center', 'bar_line', 'left_block', 'underline_pop', 'soft_window',
+  'karaoke', 'spotlight', 'cascade', 'mono_callout', 'mono_callout_glow',
+  'plain_center', 'bar_line', 'left_block', 'underline_pop',
 ].join(', ');
 
 function elevenLabsTtsBody(text) {
@@ -43,7 +43,6 @@ ${script}
 Choose one option from each list.
 - palette: ${PALETTE_KEYS}
 - style:   ${STYLE_KEYS}
-- mode:    light | dark
 - aspect:  16:9 | 9:16 | 1:1 | 4:5
 - textScale: s | m | l | xl
 
@@ -51,7 +50,6 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
 {
   "palette": "<key>",
   "style": "<key>",
-  "mode": "light|dark",
   "aspect": "16:9|9:16|1:1|4:5",
   "textScale": "s|m|l|xl",
   "mood": "<one short sentence>",
