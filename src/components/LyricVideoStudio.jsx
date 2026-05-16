@@ -12,7 +12,7 @@ const PALETTES = {
   teal:    { name: 'TEAL',    primary: '#2ED6E5', dark: '#033B40', light: '#D9FCFF' },
   magenta: { name: 'MAGENTA', primary: '#F266FF', dark: '#3D0A40', light: '#FBE4FF' },
   purple:  { name: 'PURPLE',  primary: '#7040FF', dark: '#150828', light: '#E5DCFF' },
-  orange:  { name: 'ORANGE',  primary: '#FFAB1A', dark: '#3D2800', light: '#FFE8B8' },
+  orange:  { name: 'ORANGE',  primary: '#FFAB1A', dark: '#3D2800', light: '#FFF4E0' },
   blue:    { name: 'BLUE',    primary: '#1ABEFF', dark: '#003040', light: '#CCEFFF' },
   green:   { name: 'GREEN',   primary: '#3AE556', dark: '#062D10', light: '#D5FBDC' },
   gold:    { name: 'GOLD',    primary: '#FFB700', dark: '#3D2A00', light: '#FFE899' },
