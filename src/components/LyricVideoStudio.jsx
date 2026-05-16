@@ -289,8 +289,6 @@ function drawCascade(ctx, opts) {
 
   for (let i = renderList.length - 1; i >= 0; i--) {
     const w = renderList[i];
-    const wDur = Math.max(0.05, w.end - w.start);
-    const wp = Math.min(1, Math.max(0, (time - w.start) / wDur));
     const stackPos = renderList.length - 1 - i; // 0 = newest at bottom
     const isCurrent = stackPos === 0 && time < w.end;
 
