@@ -46,8 +46,14 @@ const TEXT_SCALES = {
 };
 
 const VOICES = [
-  { id: 'AZnzlk1XvdvUeBnXmlld', name: 'Domi', vibe: 'Energetic' },
-  { id: 'yoZ06aMxZJJ28mfd3POQ', name: 'Sam',  vibe: 'Raspy' },
+  { id: 'AZnzlk1XvdvUeBnXmlld', name: 'Domi',   vibe: 'Energetic' },
+  { id: 'yoZ06aMxZJJ28mfd3POQ', name: 'Sam',    vibe: 'Raspy' },
+  { id: 'DODLEQrClDo8wCz460ld', name: 'Lauren', vibe: 'Friendly' },
+  { id: 'DXFkLCBUTmvXpp2QwZjA', name: 'Eryn',   vibe: 'Customer Service' },
+  { id: 'Cz0K1kOv9tD8l0b5Qu53', name: 'Jon',    vibe: 'Relaxed' },
+  { id: 's3TPKV1kjDlVtZbl4Ksh', name: 'Adam',   vibe: 'Engaging' },
+  { id: 'f5HLTX707KIM4SzJYzSz', name: 'Brad',   vibe: 'Welcoming' },
+  { id: 'uKGPYP2uuyRQv8SeFre0', name: 'Chris',  vibe: 'Natural' },
 ];
 
 const ELEVEN_MODEL_ID = 'eleven_v3';
