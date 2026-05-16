@@ -20,11 +20,16 @@ const PALETTES = {
 };
 
 const STYLES = {
-  karaoke:      { name: 'KARAOKE',   blurb: 'All lyrics, active word colors' },
-  spotlight:    { name: 'SPOTLIGHT', blurb: 'One word at a time, huge & centered' },
-  cascade:      { name: 'CASCADE',   blurb: 'Words flow up and stack' },
-  subtitle:     { name: 'SUBTITLE',  blurb: 'Clean caption window' },
-  mono_callout: { name: 'CALLOUT',   blurb: 'Mono caps, monumental' },
+  karaoke:      { name: 'KARAOKE',      blurb: 'All lyrics, active word glow' },
+  spotlight:    { name: 'SPOTLIGHT',    blurb: 'One word at a time, centered' },
+  cascade:      { name: 'CASCADE',      blurb: 'Words flow up and stack' },
+  subtitle:     { name: 'SUBTITLE',     blurb: 'Bottom band, tight' },
+  mono_callout: { name: 'CALLOUT',      blurb: 'Mono, single word' },
+  plain_center: { name: 'PLAIN',        blurb: 'Center chunk, no effects' },
+  bar_line:     { name: 'BAR',          blurb: 'Active word on highlight bar' },
+  left_block:   { name: 'LEFT BLOCK',   blurb: 'Left-aligned paragraph' },
+  underline_pop:{ name: 'UNDERLINE',    blurb: 'Active word underlined' },
+  soft_window:  { name: 'SOFT WINDOW',  blurb: 'Large lower third band' },
 };
 
 const ASPECTS = {
@@ -51,6 +56,21 @@ const VOICES = [
   { id: 'pNInz6obpgDQGcFmaJgB', name: 'Adam',   vibe: 'Deep narrator' },
   { id: 'yoZ06aMxZJJ28mfd3POQ', name: 'Sam',    vibe: 'Raspy' },
 ];
+
+const ELEVEN_MODEL_ID = 'eleven_v3';
+
+function buildElevenLabsTtsPayload(text) {
+  return {
+    text,
+    model_id: ELEVEN_MODEL_ID,
+    voice_settings: {
+      stability: 0.45,
+      similarity_boost: 0.75,
+      style: 0.0,
+      use_speaker_boost: true,
+    },
+  };
+}
 
 const SANS = '"Geist", "Helvetica Neue", system-ui, sans-serif';
 const MONO = '"Geist Mono", ui-monospace, monospace';
@@ -138,65 +158,13 @@ function rgba(hex, a) {
 
 // ---------- Frame renderers ----------
 
-function drawShellFrame(ctx, opts) {
-  const { width, height, palette, mode, time } = opts;
+function drawCaptionBackground(ctx, opts) {
+  const { width, height, palette, mode } = opts;
   const bg = mode === 'dark' ? palette.dark : '#FFFFFF';
   const fg = mode === 'dark' ? palette.light : '#17181A';
-
-  // Background
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, width, height);
-
-  // Subtle grid texture in dark mode for depth
-  if (mode === 'dark') {
-    ctx.save();
-    ctx.globalAlpha = 0.06;
-    ctx.strokeStyle = palette.light;
-    ctx.lineWidth = 1;
-    const step = 80;
-    for (let x = 0; x < width; x += step) {
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
-    }
-    for (let y = 0; y < height; y += step) {
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  // Section tag (top-left) — mono uppercase
-  const padding = Math.min(width, height) * 0.045;
-  const tagSize = Math.max(14, Math.round(Math.min(width, height) * 0.018));
-  ctx.font = `500 ${tagSize}px ${MONO}`;
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = palette.primary;
-  // pill background
-  const tagText = `● ${palette.name} / ${opts.styleName}`;
-  const tagW = ctx.measureText(tagText).width;
-  const tagH = tagSize * 2.2;
-  ctx.fillStyle = mode === 'dark' ? rgba(palette.light, 0.08) : rgba(palette.primary, 0.12);
-  roundRect(ctx, padding, padding, tagW + tagSize * 2, tagH, tagH/2);
-  ctx.fill();
-  ctx.fillStyle = mode === 'dark' ? palette.primary : palette.primary;
-  ctx.fillText(tagText, padding + tagSize, padding + tagH/2);
-
-  // Time counter (top-right)
-  const t = Math.max(0, time);
-  const m = Math.floor(t/60).toString().padStart(2,'0');
-  const s = Math.floor(t%60).toString().padStart(2,'0');
-  const ms = Math.floor((t%1)*100).toString().padStart(2,'0');
-  const tStr = `${m}:${s}:${ms}`;
-  ctx.font = `500 ${tagSize}px ${MONO}`;
-  ctx.textAlign = 'right';
-  ctx.fillStyle = mode === 'dark' ? rgba(palette.light, 0.55) : rgba(0,0,0,0.45);
-  ctx.fillText(tStr, width - padding, padding + tagH/2);
-  ctx.textAlign = 'left';
-
-  // Footer brand bar
-  const brand = 'LYRIC VIDEO STUDIO · CH-1 DESIGN SYSTEM';
-  ctx.font = `500 ${Math.max(10, Math.round(tagSize * 0.78))}px ${MONO}`;
-  ctx.fillStyle = mode === 'dark' ? rgba(palette.light, 0.35) : rgba(0,0,0,0.3);
-  ctx.fillText(brand, padding, height - padding);
-
+  const padding = Math.min(width, height) * 0.06;
   return { fg, bg, padding };
 }
 
@@ -213,8 +181,8 @@ function roundRect(ctx, x, y, w, h, r) {
 
 function drawKaraoke(ctx, opts) {
   const { width, height, palette, mode, words, time, textScale } = opts;
-  const { fg, padding } = drawShellFrame(ctx, opts);
-  if (!words.length) return drawEmptyState(ctx, opts);
+  const { fg, padding } = drawCaptionBackground(ctx, opts);
+  if (!words.length) return;
 
   const chunks = chunkIntoSentences(words);
   const { chunk } = currentChunk(chunks, time);
@@ -271,28 +239,21 @@ function lineWidth(ctx, line, sizePx) {
 
 function drawSpotlight(ctx, opts) {
   const { width, height, palette, mode, words, time, textScale } = opts;
-  drawShellFrame(ctx, opts);
-  if (!words.length) return drawEmptyState(ctx, opts);
+  drawCaptionBackground(ctx, opts);
+  if (!words.length) return;
 
   const idx = findActiveIndex(words, time);
   if (idx < 0) return;
   const w = words[idx];
 
-  // duration progress for current word (for subtle pulse/scale anim)
   const wDur = Math.max(0.05, w.end - w.start);
   const wProgress = Math.min(1, Math.max(0, (time - w.start) / wDur));
-  const popScale = 1 + (1 - wProgress) * 0.04; // gentle settle
+  const popScale = 1 + (1 - wProgress) * 0.04;
 
   const baseSize = Math.min(width, height) * 0.16 * textScale;
   ctx.font = `700 ${baseSize}px ${SANS}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-
-  // accent dot above
-  ctx.fillStyle = palette.primary;
-  ctx.beginPath();
-  ctx.arc(width/2, height/2 - baseSize * 0.95, baseSize * 0.08, 0, Math.PI * 2);
-  ctx.fill();
 
   ctx.save();
   ctx.translate(width/2, height/2);
@@ -303,21 +264,14 @@ function drawSpotlight(ctx, opts) {
   ctx.fillText(w.text, 0, 0);
   ctx.restore();
 
-  // next word preview, dim
-  if (idx + 1 < words.length) {
-    const next = words[idx+1];
-    ctx.font = `500 ${baseSize * 0.22}px ${MONO}`;
-    ctx.fillStyle = mode === 'dark' ? rgba(palette.light, 0.45) : rgba(0,0,0,0.35);
-    ctx.fillText(`NEXT — ${next.text.toUpperCase()}`, width/2, height/2 + baseSize * 0.95);
-  }
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
 }
 
 function drawCascade(ctx, opts) {
   const { width, height, palette, mode, words, time, textScale } = opts;
-  const { fg, padding } = drawShellFrame(ctx, opts);
-  if (!words.length) return drawEmptyState(ctx, opts);
+  const { fg, padding } = drawCaptionBackground(ctx, opts);
+  if (!words.length) return;
 
   const chunks = chunkIntoSentences(words);
   const { chunk } = currentChunk(chunks, time);
@@ -364,43 +318,30 @@ function drawCascade(ctx, opts) {
 
 function drawSubtitle(ctx, opts) {
   const { width, height, palette, mode, words, time, textScale } = opts;
-  const { fg, padding } = drawShellFrame(ctx, opts);
-  if (!words.length) return drawEmptyState(ctx, opts);
+  const { padding } = drawCaptionBackground(ctx, opts);
+  if (!words.length) return;
 
   const idx = findActiveIndex(words, time);
   if (idx < 0) return;
 
-  // Window of 5 words around active
   const start = Math.max(0, idx - 2);
   const end = Math.min(words.length, idx + 3);
   const window = words.slice(start, end);
 
-  const baseSize = Math.min(width, height) * 0.05 * textScale;
+  const baseSize = Math.min(width, height) * 0.048 * textScale;
+  const bandTop = height * 0.84;
+  ctx.fillStyle = mode === 'dark' ? rgba(0, 0, 0, 0.5) : rgba(255, 255, 255, 0.9);
+  ctx.fillRect(0, bandTop, width, height - bandTop);
+
   ctx.font = `500 ${baseSize}px ${SANS}`;
   const space = ctx.measureText(' ').width;
   let totalW = 0;
   window.forEach((w, i) => {
-    totalW += ctx.measureText(w.text).width + (i < window.length-1 ? space : 0);
+    totalW += ctx.measureText(w.text).width + (i < window.length - 1 ? space : 0);
   });
 
-  // pill background
-  const pillH = baseSize * 2.1;
-  const pillW = totalW + baseSize * 2;
-  const pillX = (width - pillW) / 2;
-  const pillY = height - padding - pillH * 1.8;
-
-  ctx.fillStyle = mode === 'dark' ? rgba(palette.light, 0.08) : rgba(23,24,26,0.06);
-  roundRect(ctx, pillX, pillY, pillW, pillH, pillH/2);
-  ctx.fill();
-  // subtle border
-  ctx.strokeStyle = mode === 'dark' ? rgba(palette.light, 0.15) : rgba(0,0,0,0.08);
-  ctx.lineWidth = 0.5;
-  roundRect(ctx, pillX, pillY, pillW, pillH, pillH/2);
-  ctx.stroke();
-
-  // text
-  let x = pillX + baseSize;
-  const yCenter = pillY + pillH/2;
+  const yCenter = bandTop + (height - bandTop) / 2;
+  let x = Math.max(padding, (width - totalW) / 2);
   ctx.textBaseline = 'middle';
   for (let i = 0; i < window.length; i++) {
     const w = window[i];
@@ -408,7 +349,7 @@ function drawSubtitle(ctx, opts) {
     ctx.font = `${isActive ? 700 : 500} ${baseSize}px ${SANS}`;
     ctx.fillStyle = isActive
       ? palette.primary
-      : (mode === 'dark' ? rgba(palette.light, 0.7) : rgba(0,0,0,0.7));
+      : (mode === 'dark' ? rgba(palette.light, 0.9) : rgba(23, 24, 26, 0.88));
     ctx.fillText(w.text, x, yCenter);
     x += ctx.measureText(w.text).width + space;
   }
@@ -417,62 +358,242 @@ function drawSubtitle(ctx, opts) {
 
 function drawMonoCallout(ctx, opts) {
   const { width, height, palette, mode, words, time, textScale } = opts;
-  drawShellFrame(ctx, opts);
-  if (!words.length) return drawEmptyState(ctx, opts);
+  drawCaptionBackground(ctx, opts);
+  if (!words.length) return;
 
   const idx = findActiveIndex(words, time);
   if (idx < 0) return;
   const w = words[idx];
 
-  // Vertical stripes accent
-  ctx.save();
-  ctx.globalAlpha = mode === 'dark' ? 0.18 : 0.08;
-  ctx.fillStyle = palette.primary;
-  const stripeW = width / 24;
-  for (let i = 0; i < 24; i += 2) {
-    ctx.fillRect(i * stripeW, 0, stripeW, height);
-  }
-  ctx.restore();
-
-  const baseSize = Math.min(width, height) * 0.13 * textScale;
+  const baseSize = Math.min(width, height) * 0.12 * textScale;
   ctx.font = `500 ${baseSize}px ${MONO}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-
-  // big background rect behind text
-  const text = w.text.toUpperCase();
-  const tw = ctx.measureText(text).width;
-  const rectH = baseSize * 1.6;
-  const rectW = tw + baseSize * 1.4;
-  const rectX = (width - rectW) / 2;
-  const rectY = (height - rectH) / 2;
-
-  ctx.fillStyle = palette.primary;
-  roundRect(ctx, rectX, rectY, rectW, rectH, rectH * 0.18);
-  ctx.fill();
-
-  // text in contrasting color
-  ctx.fillStyle = mode === 'dark' ? '#0A0A0A' : '#0A0A0A';
-  ctx.fillText(text, width/2, height/2 + baseSize * 0.06);
-
-  // index counter
-  const counter = `${String(idx+1).padStart(3,'0')} / ${String(words.length).padStart(3,'0')}`;
-  ctx.font = `500 ${baseSize * 0.18}px ${MONO}`;
-  ctx.fillStyle = mode === 'dark' ? rgba(palette.light, 0.55) : rgba(0,0,0,0.45);
-  ctx.fillText(counter, width/2, rectY - baseSize * 0.45);
-
+  const col = mode === 'dark' ? palette.light : '#17181A';
+  ctx.fillStyle = col;
+  ctx.shadowColor = mode === 'dark' ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.4)';
+  ctx.shadowBlur = Math.max(8, baseSize * 0.1);
+  ctx.fillText(w.text, width / 2, height / 2);
+  ctx.shadowBlur = 0;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
 }
 
-function drawEmptyState(ctx, opts) {
-  const { width, height, palette, mode } = opts;
-  const baseSize = Math.min(width, height) * 0.025;
-  ctx.font = `500 ${baseSize}px ${MONO}`;
-  ctx.textAlign = 'center';
-  ctx.fillStyle = mode === 'dark' ? rgba(palette.light, 0.35) : rgba(0,0,0,0.35);
-  ctx.fillText('GENERATE VOICE TO PREVIEW', width/2, height/2);
-  ctx.textAlign = 'left';
+function drawPlainCenter(ctx, opts) {
+  const { width, height, palette, mode, words, time, textScale } = opts;
+  const { fg, padding } = drawCaptionBackground(ctx, opts);
+  if (!words.length) return;
+
+  const chunks = chunkIntoSentences(words);
+  const { chunk } = currentChunk(chunks, time);
+  const activeI = findActiveIndex(words, time);
+
+  const maxW = width - padding * 2;
+  const baseSize = Math.min(width, height) * 0.052 * textScale;
+  const lines = wrapLines(ctx, chunk, maxW, baseSize);
+  const lineH = baseSize * 1.25;
+  const totalH = lines.length * lineH;
+  let y = (height - totalH) / 2 + lineH * 0.7;
+
+  ctx.textBaseline = 'alphabetic';
+
+  for (const line of lines) {
+    let xOff = (width - lineWidth(ctx, line, baseSize)) / 2;
+    for (let i = 0; i < line.length; i++) {
+      const w = line[i];
+      const wi = words.indexOf(w);
+      const isActive = wi === activeI;
+      const isPast = wi < activeI;
+      const wText = w.text;
+      ctx.font = `${isActive ? 700 : 600} ${baseSize}px ${SANS}`;
+      const ww = ctx.measureText(wText).width;
+      if (isActive) ctx.fillStyle = palette.primary;
+      else if (isPast) ctx.fillStyle = mode === 'dark' ? rgba(palette.light, 0.92) : fg;
+      else ctx.fillStyle = mode === 'dark' ? rgba(palette.light, 0.36) : rgba(0, 0, 0, 0.36);
+      ctx.fillText(wText, xOff, y);
+      xOff += ww + ctx.measureText(' ').width;
+    }
+    y += lineH;
+  }
+}
+
+function drawUnderlinePop(ctx, opts) {
+  const { width, height, palette, mode, words, time, textScale } = opts;
+  const { fg, padding } = drawCaptionBackground(ctx, opts);
+  if (!words.length) return;
+
+  const chunks = chunkIntoSentences(words);
+  const { chunk } = currentChunk(chunks, time);
+  const activeI = findActiveIndex(words, time);
+
+  const maxW = width - padding * 2;
+  const baseSize = Math.min(width, height) * 0.052 * textScale;
+  const lines = wrapLines(ctx, chunk, maxW, baseSize);
+  const lineH = baseSize * 1.25;
+  const totalH = lines.length * lineH;
+  let y = (height - totalH) / 2 + lineH * 0.7;
+
+  ctx.font = `600 ${baseSize}px ${SANS}`;
+  ctx.textBaseline = 'alphabetic';
+
+  for (const line of lines) {
+    let xOff = (width - lineWidth(ctx, line, baseSize)) / 2;
+    for (let i = 0; i < line.length; i++) {
+      const w = line[i];
+      const wi = words.indexOf(w);
+      const isActive = wi === activeI;
+      const isPast = wi < activeI;
+      const wText = w.text;
+      const ww = ctx.measureText(wText).width;
+      if (isActive) {
+        ctx.fillStyle = palette.primary;
+        ctx.fillText(wText, xOff, y);
+        ctx.strokeStyle = palette.primary;
+        ctx.lineWidth = Math.max(3, baseSize * 0.11);
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        const uy = y + baseSize * 0.14;
+        ctx.moveTo(xOff, uy);
+        ctx.lineTo(xOff + ww, uy);
+        ctx.stroke();
+      } else if (isPast) {
+        ctx.fillStyle = mode === 'dark' ? rgba(palette.light, 0.85) : fg;
+        ctx.fillText(wText, xOff, y);
+      } else {
+        ctx.fillStyle = mode === 'dark' ? rgba(palette.light, 0.32) : rgba(0, 0, 0, 0.32);
+        ctx.fillText(wText, xOff, y);
+      }
+      xOff += ww + ctx.measureText(' ').width;
+    }
+    y += lineH;
+  }
+}
+
+function drawBarLine(ctx, opts) {
+  const { width, height, palette, mode, words, time, textScale } = opts;
+  const { fg, padding } = drawCaptionBackground(ctx, opts);
+  if (!words.length) return;
+
+  const chunks = chunkIntoSentences(words);
+  const { chunk } = currentChunk(chunks, time);
+  const activeI = findActiveIndex(words, time);
+
+  const maxW = width - padding * 2;
+  const baseSize = Math.min(width, height) * 0.05 * textScale;
+  const lines = wrapLines(ctx, chunk, maxW, baseSize);
+  const lineH = baseSize * 1.28;
+  const totalH = lines.length * lineH;
+  let y = (height - totalH) / 2 + lineH * 0.72;
+
+  ctx.font = `600 ${baseSize}px ${SANS}`;
+  ctx.textBaseline = 'alphabetic';
+
+  for (const line of lines) {
+    let xOff = (width - lineWidth(ctx, line, baseSize)) / 2;
+    for (let i = 0; i < line.length; i++) {
+      const w = line[i];
+      const wi = words.indexOf(w);
+      const isActive = wi === activeI;
+      const isPast = wi < activeI;
+      const wText = w.text;
+      const ww = ctx.measureText(wText).width;
+      if (isActive) {
+        const barH = baseSize * 0.62;
+        const barY = y - baseSize * 0.76;
+        ctx.fillStyle = rgba(palette.primary, mode === 'dark' ? 0.5 : 0.35);
+        roundRect(ctx, xOff - baseSize * 0.12, barY, ww + baseSize * 0.24, barH, barH / 2);
+        ctx.fill();
+        ctx.fillStyle = mode === 'dark' ? palette.light : '#17181A';
+        ctx.fillText(wText, xOff, y);
+      } else if (isPast) {
+        ctx.fillStyle = mode === 'dark' ? rgba(palette.light, 0.88) : fg;
+        ctx.fillText(wText, xOff, y);
+      } else {
+        ctx.fillStyle = mode === 'dark' ? rgba(palette.light, 0.35) : rgba(0, 0, 0, 0.35);
+        ctx.fillText(wText, xOff, y);
+      }
+      xOff += ww + ctx.measureText(' ').width;
+    }
+    y += lineH;
+  }
+}
+
+function drawLeftBlock(ctx, opts) {
+  const { width, height, palette, mode, words, time, textScale } = opts;
+  const { fg, padding } = drawCaptionBackground(ctx, opts);
+  if (!words.length) return;
+
+  const chunks = chunkIntoSentences(words);
+  const { chunk } = currentChunk(chunks, time);
+  const activeI = findActiveIndex(words, time);
+
+  const maxW = width - padding * 2;
+  const baseSize = Math.min(width, height) * 0.048 * textScale;
+  const lines = wrapLines(ctx, chunk, maxW, baseSize);
+  const lineH = baseSize * 1.28;
+  const totalH = lines.length * lineH;
+  let y = (height - totalH) / 2 + lineH * 0.72;
+
+  ctx.textBaseline = 'alphabetic';
+
+  for (const line of lines) {
+    let xOff = padding;
+    for (let i = 0; i < line.length; i++) {
+      const w = line[i];
+      const wi = words.indexOf(w);
+      const isActive = wi === activeI;
+      const isPast = wi < activeI;
+      const wText = w.text;
+      ctx.font = `${isActive ? 700 : 600} ${baseSize}px ${SANS}`;
+      const ww = ctx.measureText(wText).width;
+      if (isActive) ctx.fillStyle = palette.primary;
+      else if (isPast) ctx.fillStyle = mode === 'dark' ? rgba(palette.light, 0.9) : fg;
+      else ctx.fillStyle = mode === 'dark' ? rgba(palette.light, 0.38) : rgba(0, 0, 0, 0.38);
+      ctx.fillText(wText, xOff, y);
+      xOff += ww + ctx.measureText(' ').width;
+    }
+    y += lineH;
+  }
+}
+
+function drawSoftWindow(ctx, opts) {
+  const { width, height, palette, mode, words, time, textScale } = opts;
+  const { padding } = drawCaptionBackground(ctx, opts);
+  if (!words.length) return;
+
+  const idx = findActiveIndex(words, time);
+  if (idx < 0) return;
+
+  const start = Math.max(0, idx - 3);
+  const end = Math.min(words.length, idx + 4);
+  const win = words.slice(start, end);
+
+  const baseSize = Math.min(width, height) * 0.056 * textScale;
+  const bandTop = height * 0.67;
+  ctx.fillStyle = mode === 'dark' ? rgba(0, 0, 0, 0.58) : rgba(255, 255, 255, 0.93);
+  ctx.fillRect(0, bandTop, width, height - bandTop);
+
+  ctx.font = `500 ${baseSize}px ${SANS}`;
+  const space = ctx.measureText(' ').width;
+  let totalW = 0;
+  win.forEach((w, i) => {
+    totalW += ctx.measureText(w.text).width + (i < win.length - 1 ? space : 0);
+  });
+
+  const yCenter = bandTop + (height - bandTop) / 2;
+  let x = Math.max(padding, (width - totalW) / 2);
+  ctx.textBaseline = 'middle';
+  for (let i = 0; i < win.length; i++) {
+    const w = win[i];
+    const isActive = (start + i) === idx;
+    ctx.font = `${isActive ? 700 : 500} ${baseSize}px ${SANS}`;
+    ctx.fillStyle = isActive
+      ? palette.primary
+      : (mode === 'dark' ? rgba(palette.light, 0.92) : rgba(23, 24, 26, 0.9));
+    ctx.fillText(w.text, x, yCenter);
+    x += ctx.measureText(w.text).width + space;
+  }
+  ctx.textBaseline = 'alphabetic';
 }
 
 const RENDERERS = {
@@ -481,6 +602,11 @@ const RENDERERS = {
   cascade: drawCascade,
   subtitle: drawSubtitle,
   mono_callout: drawMonoCallout,
+  plain_center: drawPlainCenter,
+  bar_line: drawBarLine,
+  left_block: drawLeftBlock,
+  underline_pop: drawUnderlinePop,
+  soft_window: drawSoftWindow,
 };
 
 // ---------- App component ----------
@@ -489,6 +615,7 @@ export default function LyricVideoStudio({ embedded = false }) {
   // Inputs
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
+  const [serverElevenlabs, setServerElevenlabs] = useState(null);
   const [text, setText] = useState("This is your text. Generate a voice performance, customize the style, and export a synced video.");
   const [voiceId, setVoiceId] = useState(VOICES[0].id);
 
@@ -539,6 +666,24 @@ export default function LyricVideoStudio({ embedded = false }) {
     return () => { try { document.head.removeChild(link); } catch (e) {} };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/admin/lyric-studio/capabilities', { credentials: 'include' })
+      .then((r) => {
+        if (!r.ok) throw new Error(String(r.status));
+        return r.json();
+      })
+      .then((j) => {
+        if (!cancelled) setServerElevenlabs(Boolean(j?.elevenlabsConfigured));
+      })
+      .catch(() => {
+        if (!cancelled) setServerElevenlabs(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // ---- Set up audio context for capture (lazy, once) ----
   const ensureAudioRouting = useCallback(() => {
     if (!audioRef.current) return;
@@ -578,7 +723,6 @@ export default function LyricVideoStudio({ embedded = false }) {
       words,
       time: currentTime,
       textScale: TEXT_SCALES[scaleKey].factor,
-      styleName: STYLES[styleKey].name,
     });
   }, [aspectKey, paletteKey, styleKey, mode, scaleKey, words, currentTime]);
 
@@ -601,8 +745,12 @@ export default function LyricVideoStudio({ embedded = false }) {
 
   // ---- Generate voice (with timestamps) ----
   const generateVoice = async () => {
-    if (!apiKey.trim()) { setError('Paste your ElevenLabs API key.'); return; }
-    if (!text.trim())   { setError('Add some text to vocalize.'); return; }
+    if (!text.trim()) { setError('Add some text to vocalize.'); return; }
+    const useServer = serverElevenlabs === true;
+    if (!useServer && !apiKey.trim()) {
+      setError('Paste your ElevenLabs API key, or set ELEVENLABS_API_KEY on the server (e.g. Railway).');
+      return;
+    }
     setError(null);
     setGenerating(true);
     setWords([]);
@@ -615,30 +763,48 @@ export default function LyricVideoStudio({ embedded = false }) {
     setAudioBlob(null);
 
     try {
-      const res = await fetch(
-        `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/with-timestamps`,
-        {
+      let data;
+      if (useServer) {
+        const res = await fetch('/api/admin/lyric-studio/synthesize-with-timestamps', {
           method: 'POST',
-          headers: {
-            'xi-api-key': apiKey.trim(),
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
-          body: JSON.stringify({
-            text,
-            model_id: 'eleven_multilingual_v2',
-            voice_settings: { stability: 0.45, similarity_boost: 0.75, style: 0.0, use_speaker_boost: true },
-          }),
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ text, voiceId }),
+        });
+        let body = {};
+        try {
+          body = await res.json();
+        } catch (_e) {
+          body = {};
         }
-      );
-      if (!res.ok) {
-        const err = await res.text();
-        throw new Error(`ElevenLabs ${res.status}: ${err.slice(0, 200)}`);
+        if (!res.ok) {
+          throw new Error(body?.error || `Request failed (${res.status})`);
+        }
+        data = body;
+      } else {
+        const res = await fetch(
+          `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/with-timestamps`,
+          {
+            method: 'POST',
+            headers: {
+              'xi-api-key': apiKey.trim(),
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+            },
+            body: JSON.stringify(buildElevenLabsTtsPayload(text)),
+          }
+        );
+        if (!res.ok) {
+          const err = await res.text();
+          throw new Error(`ElevenLabs ${res.status}: ${err.slice(0, 200)}`);
+        }
+        data = await res.json();
       }
-      const data = await res.json();
 
-      // Decode base64 audio
       const b64 = data.audio_base64;
+      if (!b64 || typeof b64 !== 'string') {
+        throw new Error('ElevenLabs response had no audio_base64.');
+      }
       const bin = atob(b64);
       const buf = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
@@ -646,11 +812,14 @@ export default function LyricVideoStudio({ embedded = false }) {
       const url = URL.createObjectURL(blob);
 
       const alignment = data.normalized_alignment || data.alignment;
-      const w = buildWordsFromAlignment(alignment);
+      const wordList = buildWordsFromAlignment(alignment);
+      if (!wordList.length) {
+        throw new Error('No word-level alignment returned; cannot preview captions.');
+      }
 
       setAudioBlob(blob);
       setAudioUrl(url);
-      setWords(w);
+      setWords(wordList);
     } catch (e) {
       setError(e.message || 'Generation failed.');
     } finally {
@@ -884,29 +1053,44 @@ export default function LyricVideoStudio({ embedded = false }) {
           {/* Step 1: API + text */}
           <SectionLabel n="01" title="INPUT" accent={sectionAccent} />
 
-          <label style={{ fontFamily: MONO, fontSize: 11, letterSpacing: '0.08em' }} className="block mt-3 mb-1.5 text-gray-500">
-            ELEVENLABS API KEY
-          </label>
-          <div className="relative">
-            <input
-              type={showKey ? 'text' : 'password'}
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="sk_..."
-              style={{ fontFamily: MONO }}
-              className="w-full bg-[#F0F2F7] border-0 rounded-lg px-3 py-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
-            />
-            <button
-              onClick={() => setShowKey(!showKey)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md hover:bg-black/5"
-              aria-label="Toggle key visibility"
-            >
-              {showKey ? <EyeOff className="w-4 h-4 text-gray-500"/> : <Eye className="w-4 h-4 text-gray-500"/>}
-            </button>
-          </div>
-          <p style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.06em' }} className="text-gray-400 mt-1.5">
-            STORED IN MEMORY ONLY. NOT SAVED.
-          </p>
+          {serverElevenlabs === false && (
+            <>
+              <label style={{ fontFamily: MONO, fontSize: 11, letterSpacing: '0.08em' }} className="block mt-3 mb-1.5 text-gray-500">
+                ELEVENLABS API KEY
+              </label>
+              <div className="relative">
+                <input
+                  type={showKey ? 'text' : 'password'}
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="xi-api-key..."
+                  style={{ fontFamily: MONO }}
+                  className="w-full bg-[#F0F2F7] border-0 rounded-lg px-3 py-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
+                />
+                <button
+                  onClick={() => setShowKey(!showKey)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md hover:bg-black/5"
+                  aria-label="Toggle key visibility"
+                >
+                  {showKey ? <EyeOff className="w-4 h-4 text-gray-500"/> : <Eye className="w-4 h-4 text-gray-500"/>}
+                </button>
+              </div>
+              <p style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.06em' }} className="text-gray-400 mt-1.5">
+                STORED IN MEMORY ONLY. NOT SAVED.
+              </p>
+            </>
+          )}
+          {serverElevenlabs === true && (
+            <p style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.06em' }} className="text-gray-500 mt-3 leading-relaxed">
+              Voice synthesis uses ElevenLabs <strong>{ELEVEN_MODEL_ID}</strong> via server <code className="text-[11px] bg-[#F0F2F7] px-1 rounded">ELEVENLABS_API_KEY</code>
+              {' '}(Railway variables). Paste a local key below is not needed.
+            </p>
+          )}
+          {serverElevenlabs === null && (
+            <p style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.06em' }} className="text-gray-400 mt-3">
+              Checking server voice configuration…
+            </p>
+          )}
 
           <label style={{ fontFamily: MONO, fontSize: 11, letterSpacing: '0.08em' }} className="block mt-4 mb-1.5 text-gray-500">
             TEXT
@@ -993,7 +1177,7 @@ export default function LyricVideoStudio({ embedded = false }) {
             <label style={{ fontFamily: MONO, fontSize: 11, letterSpacing: '0.08em' }} className="block mt-3 mb-1.5 text-gray-500">
               STYLE PRESET
             </label>
-            <div className="grid grid-cols-1 gap-1">
+            <div className="grid grid-cols-2 gap-1">
               {Object.entries(STYLES).map(([k, v]) => (
                 <button
                   key={k}

@@ -5,9 +5,26 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 const router = Router();
 
 const MODEL = 'claude-sonnet-4-6';
+const ELEVEN_MODEL_ID = 'eleven_v3';
 
 const PALETTE_KEYS = ['teal', 'magenta', 'purple', 'orange', 'blue', 'green', 'gold', 'mono'].join(', ');
-const STYLE_KEYS = ['karaoke', 'spotlight', 'cascade', 'subtitle', 'mono_callout'].join(', ');
+const STYLE_KEYS = [
+  'karaoke', 'spotlight', 'cascade', 'subtitle', 'mono_callout',
+  'plain_center', 'bar_line', 'left_block', 'underline_pop', 'soft_window',
+].join(', ');
+
+function elevenLabsTtsBody(text) {
+  return {
+    text,
+    model_id: ELEVEN_MODEL_ID,
+    voice_settings: {
+      stability: 0.45,
+      similarity_boost: 0.75,
+      style: 0.0,
+      use_speaker_boost: true,
+    },
+  };
+}
 
 function parseJSON(text) {
   let s = text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '');
@@ -41,6 +58,69 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
   "reasoning": "<one sentence explaining the pick>"
 }`;
 }
+
+router.get('/capabilities', (_req, res) => {
+  res.json({
+    elevenlabsConfigured: Boolean(String(process.env.ELEVENLABS_API_KEY ?? '').trim()),
+  });
+});
+
+router.post('/synthesize-with-timestamps', asyncHandler(async (req, res) => {
+  const text = req.body?.text;
+  const voiceId = req.body?.voiceId;
+  if (typeof text !== 'string' || !text.trim()) {
+    res.status(400).json({ error: 'text is required' });
+    return;
+  }
+  if (typeof voiceId !== 'string' || !voiceId.trim()) {
+    res.status(400).json({ error: 'voiceId is required' });
+    return;
+  }
+
+  const apiKey = process.env.ELEVENLABS_API_KEY;
+  if (!String(apiKey ?? '').trim()) {
+    res.status(503).json({ error: 'Server is not configured with ELEVENLABS_API_KEY.' });
+    return;
+  }
+
+  const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId.trim())}/with-timestamps`;
+  const upstream = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'xi-api-key': String(apiKey).trim(),
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify(elevenLabsTtsBody(text.trim())),
+  });
+
+  const raw = await upstream.text();
+  if (!upstream.ok) {
+    let msg = raw.slice(0, 1200);
+    try {
+      const j = JSON.parse(raw);
+      if (j?.detail?.message) msg = j.detail.message;
+      else if (typeof j?.detail === 'string') msg = j.detail;
+      else if (j?.message) msg = j.message;
+    } catch (_e) {
+      /* keep raw slice */
+    }
+    res.status(upstream.status >= 400 && upstream.status < 600 ? upstream.status : 502).json({
+      error: `ElevenLabs ${upstream.status}: ${msg}`,
+    });
+    return;
+  }
+
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch (_e) {
+    res.status(502).json({ error: 'ElevenLabs returned invalid JSON.' });
+    return;
+  }
+
+  res.json(data);
+}));
 
 router.post('/style-suggestion', asyncHandler(async (req, res) => {
   const text = req.body?.text;
