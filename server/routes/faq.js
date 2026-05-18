@@ -13,6 +13,26 @@ const KB_BATCH_CHAR_BUDGET = 24000; // soft cap per Claude prompt section
 const TARGET_FAQ_MIN = 15;
 const TARGET_FAQ_MAX = 25;
 
+// Pinned category that always renders second (right after "Getting Started").
+// These three Q&As are immune to regeneration: they are inserted verbatim on
+// every refresh and must never be modified by Claude.
+const GETTING_STARTED_CATEGORY = 'Getting Started';
+const FOR_JOURNALISTS_CATEGORY = 'For Journalists';
+const FOR_JOURNALISTS_FAQS = [
+  {
+    question: 'Where does Prism get its facts & materials?',
+    answer: `If you're skeptical of AI in Journalism, here's the first thing to know about Prism: it only draws on sources that you direct it to use.  That means trusted services like AP or Reuters, footage you select or upload, articles you import, and research you approve. Once you've added your assets, that's the entire universe Prism works within. It won't pull in outside sources later in the workflow unless you tell it to yourself.  Try asking the Prism Script Agent a question that it can’t answer, and it will simply tell you it doesn’t know. The journalism you feed in is the only journalism that comes out.`,
+  },
+  {
+    question: 'Where does Prism get interview soundbites?',
+    answer: `Every sound bite in a Prism script comes directly from real footage you allowed into the project. Prism transcribes your clips, identifies the sound bites, and places them in context in the script. Then if you like, you can preview each one, trim it to exactly the words you want heard, and remove any that don't meet your editorial standards. Prism surfaces the options, but nothing appears in a final output without passing through your review.`,
+  },
+  {
+    question: 'Can I make changes to the Video Edit?',
+    answer: `After the script stage, Prism assembles the first pass of the video edit automatically.  But Prism is designed to give you oversight of every step in the process.  So for the next step, you land in the Editing Suite where you can see every shot that was chosen, every B-roll clip that was placed, every music track that was selected. You can swap shots, trim clips, reorder the timeline, change the music, adjust captions.  Or you can ask the Prism Video Agent to do it for you, and then review the results. And over time, Prism can learn the rules that matter to your newsroom. Style Guides let you encode your editorial standards, preferred terminology, and structural conventions, so they're applied automatically every time a script is generated. Pronunciation Guides correct how the AI voice handles names, acronyms, and foreign words. These aren't suggestions to the AI — they're constraints. You write the rules, Prism follows them. Prism does the heavy lifting, but the editorial judgment stays with you.`,
+  },
+];
+
 function parseJSON(text) {
   const stripped = text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '');
   return JSON.parse(stripped);
@@ -106,7 +126,12 @@ router.post('/refresh', requireAuth, asyncHandler(async (_req, res) => {
 
 Below are the knowledge base entries. Produce between ${TARGET_FAQ_MIN} and ${TARGET_FAQ_MAX} high-value Q&A pairs that cover the most common, most useful, and most easily misunderstood aspects of the product. Prefer broad, beginner-to-intermediate questions over niche edge cases. Each answer should be self-contained, practical, and concise (1-4 short paragraphs, plain prose; markdown lists are allowed when helpful).
 
-Group the questions into between 3 and 6 short, intuitive CATEGORIES that emerge from the content (for example: "Getting Started", "Editing", "Export & Sharing", "Troubleshooting"). Use Title Case. Use the exact same category string for every question that belongs in that category. Order categories from most foundational to most advanced. Within each category, order questions from most common/foundational to more specific.
+Group the questions into between 3 and 6 short, intuitive CATEGORIES that emerge from the content (for example: "Getting Started", "Editing", "Export & Sharing", "Troubleshooting"). Use Title Case. Use the exact same category string for every question that belongs in that category. Within each category, order questions from most common/foundational to more specific.
+
+REQUIRED CATEGORY ORDERING:
+- The FIRST category you return MUST be exactly "Getting Started". Beginner/onboarding questions go here.
+- Do NOT use the category name "For Journalists" — that category is reserved and managed separately. Do not generate any questions about: where Prism gets its facts/materials/sources, where Prism gets interview soundbites, or whether the user can make changes to the video edit / Editing Suite oversight. Those topics are pinned elsewhere; skip them entirely.
+- After "Getting Started", order the remaining categories from most foundational to most advanced.
 
 For every Q&A, include the IDs of the KB entries you used as sources in source_kb_ids.
 
@@ -171,16 +196,53 @@ ${summaries.join('\n')}`;
       };
     });
 
-    // Re-rank rows: first by category order, then by their original index.
+    // Enforce the required category layout:
+    //   slot 0 = "Getting Started" (Claude must have produced it)
+    //   slot 1 = "For Journalists" (pinned, injected below)
+    //   slot 2..N = every other category Claude returned, in its original order
+    if (!categoryOrder.has(GETTING_STARTED_CATEGORY)) {
+      throw new Error(`Claude did not return a "${GETTING_STARTED_CATEGORY}" category`);
+    }
+    if (categoryOrder.has(FOR_JOURNALISTS_CATEGORY)) {
+      throw new Error(`Claude returned the reserved category "${FOR_JOURNALISTS_CATEGORY}"`);
+    }
+
+    const finalCategoryOrder = new Map();
+    finalCategoryOrder.set(GETTING_STARTED_CATEGORY, 0);
+    finalCategoryOrder.set(FOR_JOURNALISTS_CATEGORY, 1);
+    for (const cat of categoryOrder.keys()) {
+      if (cat === GETTING_STARTED_CATEGORY) continue;
+      finalCategoryOrder.set(cat, finalCategoryOrder.size);
+    }
+
+    // Re-rank Claude's rows using the final category ordering, then their
+    // original index within that category.
     const perCategoryCount = new Map();
     for (const row of rows) {
-      const catIdx = row.category ? categoryOrder.get(row.category) : categoryOrder.size;
+      const catIdx = row.category
+        ? finalCategoryOrder.get(row.category)
+        : finalCategoryOrder.size;
       const within = perCategoryCount.get(catIdx) ?? 0;
       perCategoryCount.set(catIdx, within + 1);
       row.display_order = catIdx * 1000 + within;
     }
     for (const row of rows) {
       delete row._idx;
+    }
+
+    // Inject the pinned "For Journalists" rows. They sit in slot 1 with
+    // display_order 1000, 1001, 1002 so they render right after "Getting
+    // Started" and before any other Claude-generated category.
+    const forJournalistsIdx = finalCategoryOrder.get(FOR_JOURNALISTS_CATEGORY);
+    for (let i = 0; i < FOR_JOURNALISTS_FAQS.length; i += 1) {
+      const pinned = FOR_JOURNALISTS_FAQS[i];
+      rows.push({
+        category: FOR_JOURNALISTS_CATEGORY,
+        question: pinned.question,
+        answer: pinned.answer,
+        source_kb_ids: [],
+        display_order: forJournalistsIdx * 1000 + i,
+      });
     }
 
     send({ type: 'progress', message: `Replacing FAQ table with ${rows.length} entries...` });
