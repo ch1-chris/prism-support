@@ -41,15 +41,66 @@ function normalizePayload(body) {
   if (body.category !== undefined) out.category = body.category ? String(body.category).trim() : null;
   if (body.display_order !== undefined) out.display_order = Number.parseInt(body.display_order, 10) || 0;
   if (body.published !== undefined) out.published = Boolean(body.published);
+  if (body.is_global !== undefined) out.is_global = Boolean(body.is_global);
   return out;
 }
 
-// --- Public: list published tutorials ---
-router.get('/', asyncHandler(async (_req, res) => {
+// Replace a tutorial's brand assignments with the provided set.
+async function setBrandAssignments(tutorialId, brandIds) {
+  const { error: delError } = await supabase
+    .from('tutorial_brands')
+    .delete()
+    .eq('tutorial_id', tutorialId);
+  if (delError) throw new Error(`Failed to clear brand assignments: ${delError.message}`);
+
+  const ids = Array.isArray(brandIds)
+    ? [...new Set(brandIds.map((n) => Number.parseInt(n, 10)).filter(Number.isInteger))]
+    : [];
+  if (!ids.length) return ids;
+
+  const rows = ids.map((brand_id) => ({ tutorial_id: tutorialId, brand_id }));
+  const { error: insError } = await supabase.from('tutorial_brands').insert(rows);
+  if (insError) throw new Error(`Failed to assign brands: ${insError.message}`);
+  return ids;
+}
+
+async function getBrandIds(tutorialId) {
   const { data, error } = await supabase
+    .from('tutorial_brands')
+    .select('brand_id')
+    .eq('tutorial_id', tutorialId);
+  if (error) throw new Error(`Failed to load brand assignments: ${error.message}`);
+  return (data || []).map((r) => r.brand_id);
+}
+
+// --- Public: list published tutorials (brand-aware) ---
+// Anonymous visitors see only global tutorials. A visitor who has redeemed a
+// brand access code (session.brandId) also sees that brand's assigned videos.
+router.get('/', asyncHandler(async (req, res) => {
+  const brandId = req.session?.brandId;
+
+  let query = supabase
     .from('tutorials')
     .select('id, title, description, video_url, thumbnail_url, category, display_order, created_at')
-    .eq('published', true)
+    .eq('published', true);
+
+  let brandTutorialIds = [];
+  if (brandId) {
+    const { data: links, error: linkError } = await supabase
+      .from('tutorial_brands')
+      .select('tutorial_id')
+      .eq('brand_id', brandId);
+    if (linkError) throw new Error(`Failed to load brand assignments: ${linkError.message}`);
+    brandTutorialIds = (links || []).map((l) => l.tutorial_id);
+  }
+
+  if (brandTutorialIds.length) {
+    query = query.or(`is_global.eq.true,id.in.(${brandTutorialIds.join(',')})`);
+  } else {
+    query = query.eq('is_global', true);
+  }
+
+  const { data, error } = await query
     .order('display_order', { ascending: true })
     .order('created_at', { ascending: false });
 
@@ -57,7 +108,7 @@ router.get('/', asyncHandler(async (_req, res) => {
   res.json({ tutorials: data || [] });
 }));
 
-// --- Admin: list all (published + drafts) ---
+// --- Admin: list all (published + drafts) with visibility info ---
 router.get('/admin', requireAuth, asyncHandler(async (_req, res) => {
   const { data, error } = await supabase
     .from('tutorials')
@@ -66,7 +117,20 @@ router.get('/admin', requireAuth, asyncHandler(async (_req, res) => {
     .order('created_at', { ascending: false });
 
   if (error) throw new Error(`Failed to list tutorials: ${error.message}`);
-  res.json({ tutorials: data || [] });
+
+  const { data: links, error: linkError } = await supabase
+    .from('tutorial_brands')
+    .select('tutorial_id, brand_id');
+  if (linkError) throw new Error(`Failed to load brand assignments: ${linkError.message}`);
+
+  const byTutorial = new Map();
+  for (const link of links || []) {
+    if (!byTutorial.has(link.tutorial_id)) byTutorial.set(link.tutorial_id, []);
+    byTutorial.get(link.tutorial_id).push(link.brand_id);
+  }
+
+  const tutorials = (data || []).map((t) => ({ ...t, brand_ids: byTutorial.get(t.id) || [] }));
+  res.json({ tutorials });
 }));
 
 // --- Admin: create tutorial (metadata only; file uploads use dedicated endpoints) ---
@@ -80,6 +144,7 @@ router.post('/', requireAuth, asyncHandler(async (req, res) => {
     .insert({
       ...payload,
       published: payload.published ?? true,
+      is_global: payload.is_global ?? true,
       display_order: payload.display_order ?? 0,
       updated_at: new Date().toISOString(),
     })
@@ -87,7 +152,13 @@ router.post('/', requireAuth, asyncHandler(async (req, res) => {
     .single();
 
   if (error) throw new Error(`Failed to create tutorial: ${error.message}`);
-  res.status(201).json(data);
+
+  let brand_ids = [];
+  if (req.body.brand_ids !== undefined) {
+    brand_ids = await setBrandAssignments(data.id, req.body.brand_ids);
+  }
+
+  res.status(201).json({ ...data, brand_ids });
 }));
 
 // --- Admin: update tutorial ---
@@ -96,17 +167,33 @@ router.put('/:id', requireAuth, asyncHandler(async (req, res) => {
   if (!Number.isInteger(id)) throw new Error('Invalid tutorial id');
 
   const payload = normalizePayload(req.body);
-  if (!Object.keys(payload).length) throw new Error('No fields to update');
+  const hasBrandIds = req.body.brand_ids !== undefined;
+  if (!Object.keys(payload).length && !hasBrandIds) throw new Error('No fields to update');
 
-  const { data, error } = await supabase
-    .from('tutorials')
-    .update({ ...payload, updated_at: new Date().toISOString() })
-    .eq('id', id)
-    .select()
-    .single();
+  let data;
+  if (Object.keys(payload).length) {
+    const result = await supabase
+      .from('tutorials')
+      .update({ ...payload, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+    if (result.error) throw new Error(`Failed to update tutorial: ${result.error.message}`);
+    data = result.data;
+  } else {
+    const result = await supabase.from('tutorials').select('*').eq('id', id).single();
+    if (result.error) throw new Error(`Tutorial not found: ${result.error.message}`);
+    data = result.data;
+  }
 
-  if (error) throw new Error(`Failed to update tutorial: ${error.message}`);
-  res.json(data);
+  let brand_ids;
+  if (hasBrandIds) {
+    brand_ids = await setBrandAssignments(id, req.body.brand_ids);
+  } else {
+    brand_ids = await getBrandIds(id);
+  }
+
+  res.json({ ...data, brand_ids });
 }));
 
 // --- Admin: delete tutorial (and its storage objects) ---

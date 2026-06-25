@@ -11,6 +11,7 @@ import chatRoutes from './server/routes/chat.js';
 import analyticsRoutes from './server/routes/analytics.js';
 import adminChatRoutes from './server/routes/admin-chat.js';
 import tutorialsRoutes from './server/routes/tutorials.js';
+import brandsRoutes from './server/routes/brands.js';
 import faqRoutes from './server/routes/faq.js';
 import lyricStudioRoutes from './server/routes/lyric-studio.js';
 import { requireAuth } from './server/middleware/auth.js';
@@ -79,6 +80,7 @@ app.use('/api/chat', chatLimiter, chatRoutes);
 app.use('/api/analytics', requireAuth, analyticsRoutes);
 app.use('/api/admin-chat', requireAuth, adminChatRoutes);
 app.use('/api/tutorials', tutorialsRoutes); // auth handled per-route
+app.use('/api/brands', brandsRoutes);       // auth handled per-route
 app.use('/api/faq', faqRoutes);             // auth handled per-route
 app.use('/api/admin/lyric-studio', requireAuth, lyricStudioRoutes);
 

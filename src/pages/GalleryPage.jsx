@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { tutorials as tutorialsApi } from '../lib/api';
+import { tutorials as tutorialsApi, brandAccess } from '../lib/api';
 
 function groupByCategory(items) {
   const groups = new Map();
@@ -18,20 +18,67 @@ export default function GalleryPage() {
   const [error, setError] = useState(null);
   const [active, setActive] = useState(null);
 
+  const [brand, setBrand] = useState(null);
+  const [codeOpen, setCodeOpen] = useState(false);
+  const [codeInput, setCodeInput] = useState('');
+  const [codeError, setCodeError] = useState(null);
+  const [codeBusy, setCodeBusy] = useState(false);
+
+  const loadTutorials = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await tutorialsApi.list();
+      setItems(res.tutorials || []);
+    } catch (err) {
+      setError(err.message || String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
-    tutorialsApi.list()
+    brandAccess.status()
       .then((res) => {
-        if (!cancelled) setItems(res.tutorials || []);
+        if (!cancelled) setBrand(res.brand || null);
       })
-      .catch((err) => {
-        if (!cancelled) setError(err.message || String(err));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+      .catch(() => {});
+    loadTutorials();
     return () => { cancelled = true; };
-  }, []);
+  }, [loadTutorials]);
+
+  async function handleRedeem(e) {
+    e.preventDefault();
+    const code = codeInput.trim();
+    if (!code) return;
+    setCodeBusy(true);
+    setCodeError(null);
+    try {
+      const res = await brandAccess.redeem(code);
+      setBrand(res.brand || null);
+      setCodeOpen(false);
+      setCodeInput('');
+      await loadTutorials();
+    } catch (err) {
+      setCodeError(err.message || 'That code is not valid');
+    } finally {
+      setCodeBusy(false);
+    }
+  }
+
+  async function handleExit() {
+    setCodeBusy(true);
+    try {
+      await brandAccess.exit();
+      setBrand(null);
+      await loadTutorials();
+    } catch (err) {
+      setCodeError(err.message || String(err));
+    } finally {
+      setCodeBusy(false);
+    }
+  }
 
   useEffect(() => {
     function onKey(e) {
@@ -54,11 +101,55 @@ export default function GalleryPage() {
             <span className="chat-brand-text">Tutorial Gallery</span>
           </div>
           <div className="chat-topbar-controls">
+            {brand ? (
+              <button className="chat-new-btn" onClick={handleExit} disabled={codeBusy} title="Stop viewing this account's tutorials">
+                Exit {brand.name}
+              </button>
+            ) : (
+              <button className="chat-new-btn" onClick={() => { setCodeOpen((v) => !v); setCodeError(null); }}>
+                Have an access code?
+              </button>
+            )}
             <Link to="/faq" className="chat-new-btn">FAQ</Link>
             <Link to="/" className="chat-new-btn">Back to chat</Link>
           </div>
         </div>
       </header>
+
+      {brand && (
+        <div style={{
+          padding: '10px 24px',
+          background: 'var(--grey-50)',
+          borderBottom: '1px solid var(--grey-100)',
+          fontSize: 13,
+          color: 'var(--text-secondary)',
+        }}>
+          Viewing <strong style={{ color: 'var(--text-primary)' }}>{brand.name}</strong> tutorials, plus general walkthroughs.
+        </div>
+      )}
+
+      {codeOpen && !brand && (
+        <div style={{
+          padding: '16px 24px',
+          background: 'var(--grey-50)',
+          borderBottom: '1px solid var(--grey-100)',
+        }}>
+          <form onSubmit={handleRedeem} style={{ display: 'flex', gap: 8, alignItems: 'center', maxWidth: 480, flexWrap: 'wrap' }}>
+            <input
+              type="text"
+              value={codeInput}
+              onChange={(e) => setCodeInput(e.target.value)}
+              placeholder="Enter your access code"
+              autoFocus
+              style={{ flex: 1, minWidth: 200 }}
+            />
+            <button type="submit" className="btn btn-primary btn-sm" disabled={codeBusy || !codeInput.trim()}>
+              {codeBusy ? 'Checking…' : 'View tutorials'}
+            </button>
+          </form>
+          {codeError && <p className="error-text" style={{ marginTop: 8, marginBottom: 0 }}>{codeError}</p>}
+        </div>
+      )}
 
       <div className="gallery-tutorials" style={{ flex: 1, overflowY: 'auto', padding: '32px 24px' }}>
         <div style={{ maxWidth: 1400, margin: '0 auto' }}>

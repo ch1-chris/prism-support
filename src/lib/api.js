@@ -239,6 +239,21 @@ export const tutorials = {
   },
 };
 
+// --- Brand access (public: gallery code redemption) ---
+export const brandAccess = {
+  status: () => request('/api/brands/access'),
+  redeem: (code) => request('/api/brands/access', { method: 'POST', body: JSON.stringify({ code }) }),
+  exit: () => request('/api/brands/access', { method: 'DELETE' }),
+};
+
+// --- Brands (admin: client accounts) ---
+export const brands = {
+  list: () => request('/api/brands'),
+  create: (data) => request('/api/brands', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => request(`/api/brands/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  remove: (id) => request(`/api/brands/${id}`, { method: 'DELETE' }),
+};
+
 // --- FAQ ---
 export const faq = {
   list: () => request('/api/faq'),

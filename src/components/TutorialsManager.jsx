@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { tutorials as tutorialsApi } from '../lib/api';
+import { tutorials as tutorialsApi, brands as brandsApi } from '../lib/api';
 
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
@@ -16,10 +16,13 @@ const EMPTY_DRAFT = {
   thumbnail_url: '',
   published: true,
   display_order: 0,
+  is_global: true,
+  brand_ids: [],
 };
 
 export default function TutorialsManager() {
   const [items, setItems] = useState([]);
+  const [brandList, setBrandList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [editingId, setEditingId] = useState(null);
@@ -44,7 +47,32 @@ export default function TutorialsManager() {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  async function loadBrands() {
+    try {
+      const res = await brandsApi.list();
+      setBrandList(res.brands || []);
+    } catch (err) {
+      console.error('Failed to load brands:', err);
+    }
+  }
+
+  useEffect(() => { load(); loadBrands(); }, []);
+
+  function brandNamesFor(item) {
+    if (!item.brand_ids?.length) return [];
+    return item.brand_ids
+      .map((id) => brandList.find((b) => b.id === id)?.name)
+      .filter(Boolean);
+  }
+
+  function toggleBrand(id) {
+    setDraft((d) => {
+      const set = new Set(d.brand_ids || []);
+      if (set.has(id)) set.delete(id);
+      else set.add(id);
+      return { ...d, brand_ids: Array.from(set) };
+    });
+  }
 
   function startCreate() {
     setEditingId(null);
@@ -62,6 +90,8 @@ export default function TutorialsManager() {
       thumbnail_url: item.thumbnail_url || '',
       published: item.published !== false,
       display_order: item.display_order ?? 0,
+      is_global: item.is_global !== false,
+      brand_ids: item.brand_ids || [],
     });
     setShowForm(true);
   }
@@ -134,6 +164,8 @@ export default function TutorialsManager() {
         thumbnail_url: draft.thumbnail_url.trim() || null,
         published: draft.published,
         display_order: Number(draft.display_order) || 0,
+        is_global: draft.is_global,
+        brand_ids: draft.is_global ? [] : (draft.brand_ids || []),
       };
       if (editingId) {
         const updated = await tutorialsApi.update(editingId, payload);
@@ -339,6 +371,67 @@ export default function TutorialsManager() {
             )}
           </div>
 
+          <div className="field">
+            <label style={{ marginBottom: 6 }}>Visibility</label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0, fontWeight: 'normal' }}>
+                <input
+                  type="radio"
+                  name="tut-visibility"
+                  checked={draft.is_global}
+                  onChange={() => setDraft({ ...draft, is_global: true })}
+                  style={{ width: 'auto' }}
+                />
+                Global — visible to everyone
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0, fontWeight: 'normal' }}>
+                <input
+                  type="radio"
+                  name="tut-visibility"
+                  checked={!draft.is_global}
+                  onChange={() => setDraft({ ...draft, is_global: false })}
+                  style={{ width: 'auto' }}
+                />
+                Specific accounts only
+              </label>
+            </div>
+
+            {!draft.is_global && (
+              <div style={{
+                marginTop: 8,
+                padding: 12,
+                border: '1px solid var(--grey-100)',
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--grey-0)',
+              }}>
+                {brandList.length === 0 ? (
+                  <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)' }}>
+                    No accounts yet. Create one in the Accounts tab, then assign it here.
+                  </p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {brandList.map((b) => (
+                      <label key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0, fontWeight: 'normal' }}>
+                        <input
+                          type="checkbox"
+                          checked={(draft.brand_ids || []).includes(b.id)}
+                          onChange={() => toggleBrand(b.id)}
+                          style={{ width: 'auto' }}
+                        />
+                        {b.name}
+                      </label>
+                    ))}
+                  </div>
+                )}
+                {(draft.brand_ids || []).length === 0 && (
+                  <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--text-muted)' }}>
+                    No accounts selected — this video stays hidden from everyone except admins until you assign one.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
           <div className="field" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <input
               id="tut-published"
@@ -414,6 +507,17 @@ export default function TutorialsManager() {
                     {item.category && (
                       <span style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
                         {item.category}
+                      </span>
+                    )}
+                    {item.is_global !== false ? (
+                      <span className="badge badge-default" style={{ background: 'var(--grey-100)' }}>global</span>
+                    ) : item.brand_ids?.length ? (
+                      <span className="badge badge-default" style={{ background: 'var(--grey-100)' }} title={brandNamesFor(item).join(', ')}>
+                        {brandNamesFor(item).join(', ') || `${item.brand_ids.length} account(s)`}
+                      </span>
+                    ) : (
+                      <span className="badge badge-default" style={{ background: 'var(--grey-100)' }} title="Hidden from everyone except admins">
+                        admin only
                       </span>
                     )}
                   </div>
