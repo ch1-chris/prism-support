@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { tutorials as tutorialsApi, brandAccess } from '../lib/api';
+import { tutorials as tutorialsApi, brandAccess, auth } from '../lib/api';
 
 function groupByCategory(items) {
   const groups = new Map();
@@ -19,7 +19,8 @@ export default function GalleryPage() {
   const [active, setActive] = useState(null);
 
   const [brand, setBrand] = useState(null);
-  const [codeOpen, setCodeOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [checking, setChecking] = useState(true);
   const [codeInput, setCodeInput] = useState('');
   const [codeError, setCodeError] = useState(null);
   const [codeBusy, setCodeBusy] = useState(false);
@@ -39,12 +40,23 @@ export default function GalleryPage() {
 
   useEffect(() => {
     let cancelled = false;
-    brandAccess.status()
-      .then((res) => {
-        if (!cancelled) setBrand(res.brand || null);
-      })
-      .catch(() => {});
-    loadTutorials();
+    (async () => {
+      try {
+        const [statusRes, authRes] = await Promise.all([
+          brandAccess.status().catch(() => ({ brand: null })),
+          auth.status().catch(() => ({ authenticated: false })),
+        ]);
+        if (cancelled) return;
+        const activeBrand = statusRes.brand || null;
+        const admin = authRes.authenticated === true;
+        setBrand(activeBrand);
+        setIsAdmin(admin);
+        // Only fetch videos once the visitor is allowed to see them.
+        if (activeBrand || admin) await loadTutorials();
+      } finally {
+        if (!cancelled) setChecking(false);
+      }
+    })();
     return () => { cancelled = true; };
   }, [loadTutorials]);
 
@@ -57,7 +69,6 @@ export default function GalleryPage() {
     try {
       const res = await brandAccess.redeem(code);
       setBrand(res.brand || null);
-      setCodeOpen(false);
       setCodeInput('');
       await loadTutorials();
     } catch (err) {
@@ -72,7 +83,10 @@ export default function GalleryPage() {
     try {
       await brandAccess.exit();
       setBrand(null);
-      await loadTutorials();
+      setCodeError(null);
+      // Non-admins drop back to the gate; admins keep previewing the global list.
+      if (isAdmin) await loadTutorials();
+      else setItems([]);
     } catch (err) {
       setCodeError(err.message || String(err));
     } finally {
@@ -101,13 +115,9 @@ export default function GalleryPage() {
             <span className="chat-brand-text">Tutorial Gallery</span>
           </div>
           <div className="chat-topbar-controls">
-            {brand ? (
+            {brand && (
               <button className="chat-new-btn" onClick={handleExit} disabled={codeBusy} title="Stop viewing this account's tutorials">
                 Exit {brand.name}
-              </button>
-            ) : (
-              <button className="chat-new-btn" onClick={() => { setCodeOpen((v) => !v); setCodeError(null); }}>
-                Have an access code?
               </button>
             )}
             <Link to="/faq" className="chat-new-btn">FAQ</Link>
@@ -128,29 +138,34 @@ export default function GalleryPage() {
         </div>
       )}
 
-      {codeOpen && !brand && (
-        <div style={{
-          padding: '16px 24px',
-          background: 'var(--grey-50)',
-          borderBottom: '1px solid var(--grey-100)',
-        }}>
-          <form onSubmit={handleRedeem} style={{ display: 'flex', gap: 8, alignItems: 'center', maxWidth: 480, flexWrap: 'wrap' }}>
-            <input
-              type="text"
-              value={codeInput}
-              onChange={(e) => setCodeInput(e.target.value)}
-              placeholder="Enter your access code"
-              autoFocus
-              style={{ flex: 1, minWidth: 200 }}
-            />
-            <button type="submit" className="btn btn-primary btn-sm" disabled={codeBusy || !codeInput.trim()}>
+      {checking ? (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--text-muted)', fontSize: 14 }}>
+          <div className="spinner" /> Loading…
+        </div>
+      ) : (!brand && !isAdmin) ? (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <form className="login-card" onSubmit={handleRedeem} style={{ maxWidth: 420 }}>
+            <img src="/prism-logo.png" alt="Prism" style={{ width: 56, height: 56, borderRadius: 12, marginBottom: 12 }} />
+            <h1>Tutorial Videos</h1>
+            <p>Enter your access code to view your tutorials.</p>
+            <div className="field">
+              <label htmlFor="gallery-code">Access code</label>
+              <input
+                id="gallery-code"
+                type="text"
+                value={codeInput}
+                onChange={(e) => setCodeInput(e.target.value)}
+                placeholder="Your access code"
+                autoFocus
+              />
+            </div>
+            <button className="btn btn-primary" style={{ width: '100%' }} disabled={codeBusy || !codeInput.trim()}>
               {codeBusy ? 'Checking…' : 'View tutorials'}
             </button>
+            {codeError && <p className="error-text">{codeError}</p>}
           </form>
-          {codeError && <p className="error-text" style={{ marginTop: 8, marginBottom: 0 }}>{codeError}</p>}
         </div>
-      )}
-
+      ) : (
       <div className="gallery-tutorials" style={{ flex: 1, overflowY: 'auto', padding: '32px 24px' }}>
         <div style={{ maxWidth: 1400, margin: '0 auto' }}>
           <div style={{ marginBottom: 24 }}>
@@ -264,6 +279,7 @@ export default function GalleryPage() {
           ))}
         </div>
       </div>
+      )}
 
       {active && (
         <div

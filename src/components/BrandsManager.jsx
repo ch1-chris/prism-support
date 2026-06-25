@@ -7,9 +7,21 @@ export default function BrandsManager() {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [newName, setNewName] = useState('');
+  const [newCode, setNewCode] = useState('');
   const [copiedId, setCopiedId] = useState(null);
+  const [editingCodeId, setEditingCodeId] = useState(null);
+  const [editCodeValue, setEditCodeValue] = useState('');
 
   const galleryUrl = `${window.location.origin}/gallery`;
+
+  // A code is shared as part of a link, so reject whitespace inside it.
+  function validateCode(code) {
+    if (/\s/.test(code)) {
+      alert('Access codes cannot contain spaces.');
+      return false;
+    }
+    return true;
+  }
 
   async function load() {
     setLoading(true);
@@ -30,13 +42,51 @@ export default function BrandsManager() {
     e.preventDefault();
     const name = newName.trim();
     if (!name) return;
+    const code = newCode.trim();
+    if (code && !validateCode(code)) return;
     setBusy(true);
     try {
-      const created = await brandsApi.create({ name });
+      const payload = { name };
+      if (code) payload.access_code = code;
+      const created = await brandsApi.create(payload);
       setItems((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
       setNewName('');
+      setNewCode('');
     } catch (err) {
       alert(`Create failed: ${err.message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function startEditCode(item) {
+    setEditingCodeId(item.id);
+    setEditCodeValue(item.access_code || '');
+  }
+
+  function cancelEditCode() {
+    setEditingCodeId(null);
+    setEditCodeValue('');
+  }
+
+  async function handleSaveCode(item) {
+    const code = editCodeValue.trim();
+    if (!code) {
+      alert('Access code cannot be empty.');
+      return;
+    }
+    if (!validateCode(code)) return;
+    if (code === item.access_code) {
+      cancelEditCode();
+      return;
+    }
+    setBusy(true);
+    try {
+      const updated = await brandsApi.update(item.id, { access_code: code });
+      setItems((prev) => prev.map((b) => (b.id === item.id ? updated : b)));
+      cancelEditCode();
+    } catch (err) {
+      alert(`Save failed: ${err.message}`);
     } finally {
       setBusy(false);
     }
@@ -86,13 +136,20 @@ export default function BrandsManager() {
         to their account. Assign videos to an account from the <strong>Gallery</strong> tab.
       </div>
 
-      <form onSubmit={handleCreate} style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+      <form onSubmit={handleCreate} style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
         <input
           type="text"
           placeholder="New account name (e.g. Billboard)"
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
-          style={{ flex: 1, minWidth: 220 }}
+          style={{ flex: 1, minWidth: 200 }}
+        />
+        <input
+          type="text"
+          placeholder="Access code (optional — auto-generated if blank)"
+          value={newCode}
+          onChange={(e) => setNewCode(e.target.value)}
+          style={{ flex: 1, minWidth: 200 }}
         />
         <button type="submit" className="btn btn-primary btn-sm" disabled={busy || !newName.trim()}>
           {busy ? 'Working…' : '+ Create account'}
@@ -129,29 +186,54 @@ export default function BrandsManager() {
             >
               <div style={{ flex: 1, minWidth: 220 }}>
                 <strong style={{ fontSize: 14 }}>{item.name}</strong>
-                <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <code style={{
-                    fontSize: 13,
-                    padding: '3px 8px',
-                    background: 'var(--grey-50)',
-                    border: '1px solid var(--grey-100)',
-                    borderRadius: 'var(--radius-sm)',
-                  }}>
-                    {item.access_code}
-                  </code>
-                  <button className="btn btn-sm" onClick={() => copy(item.access_code, `code-${item.id}`)}>
-                    {copiedId === `code-${item.id}` ? 'Copied!' : 'Copy code'}
-                  </button>
-                  <button
-                    className="btn btn-sm"
-                    onClick={() => copy(`${galleryUrl}\nAccess code: ${item.access_code}`, `link-${item.id}`)}
-                  >
-                    {copiedId === `link-${item.id}` ? 'Copied!' : 'Copy link + code'}
-                  </button>
-                </div>
+                {editingCodeId === item.id ? (
+                  <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <input
+                      type="text"
+                      value={editCodeValue}
+                      onChange={(e) => setEditCodeValue(e.target.value)}
+                      autoFocus
+                      style={{ flex: 1, minWidth: 200, fontFamily: 'var(--font-mono)', fontSize: 13 }}
+                    />
+                    <button className="btn btn-sm btn-primary" onClick={() => handleSaveCode(item)} disabled={busy}>
+                      Save
+                    </button>
+                    <button className="btn btn-sm" onClick={cancelEditCode} disabled={busy}>
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <code style={{
+                      fontSize: 13,
+                      padding: '3px 8px',
+                      background: 'var(--grey-50)',
+                      border: '1px solid var(--grey-100)',
+                      borderRadius: 'var(--radius-sm)',
+                    }}>
+                      {item.access_code}
+                    </code>
+                    <button className="btn btn-sm" onClick={() => copy(item.access_code, `code-${item.id}`)}>
+                      {copiedId === `code-${item.id}` ? 'Copied!' : 'Copy code'}
+                    </button>
+                    <button
+                      className="btn btn-sm"
+                      onClick={() => copy(`${galleryUrl}\nAccess code: ${item.access_code}`, `link-${item.id}`)}
+                    >
+                      {copiedId === `link-${item.id}` ? 'Copied!' : 'Copy link + code'}
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'flex', gap: 4 }}>
+                <button
+                  className="btn btn-sm"
+                  onClick={() => startEditCode(item)}
+                  disabled={busy || editingCodeId === item.id}
+                >
+                  Edit code
+                </button>
                 <button className="btn btn-sm" onClick={() => handleRegenerate(item)} disabled={busy}>
                   Regenerate code
                 </button>
