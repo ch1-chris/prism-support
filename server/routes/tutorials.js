@@ -133,6 +133,59 @@ router.get('/admin', requireAuth, asyncHandler(async (_req, res) => {
   res.json({ tutorials });
 }));
 
+// --- Admin: list recent video views (activity log) ---
+router.get('/views', requireAuth, asyncHandler(async (req, res) => {
+  const limit = Math.min(Number.parseInt(req.query.limit, 10) || 100, 500);
+
+  const { data, error } = await supabase
+    .from('tutorial_views')
+    .select('id, tutorial_id, brand_id, is_admin, tutorial_title, brand_name, created_at')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) throw new Error(`Failed to list tutorial views: ${error.message}`);
+  res.json({ views: data || [] });
+}));
+
+// --- Public: record a video play (activity log) ---
+// No requireAuth: gallery viewers are not admins. Brand attribution comes from
+// the redeemed access code stored on the session; admin previews are flagged.
+router.post('/:id/view', asyncHandler(async (req, res) => {
+  const id = Number.parseInt(req.params.id, 10);
+  if (!Number.isInteger(id)) throw new Error('Invalid tutorial id');
+
+  const { data: tutorial, error: tutorialError } = await supabase
+    .from('tutorials')
+    .select('id, title')
+    .eq('id', id)
+    .single();
+  if (tutorialError) throw new Error(`Tutorial not found: ${tutorialError.message}`);
+
+  const brandId = req.session?.brandId ?? null;
+  let brandName = null;
+  if (brandId) {
+    const { data: brand, error: brandError } = await supabase
+      .from('brands')
+      .select('name')
+      .eq('id', brandId)
+      .maybeSingle();
+    if (brandError) throw new Error(`Failed to load brand: ${brandError.message}`);
+    brandName = brand?.name ?? null;
+  }
+
+  const { error: insertError } = await supabase.from('tutorial_views').insert({
+    tutorial_id: tutorial.id,
+    brand_id: brandId,
+    is_admin: req.session?.isAdmin === true,
+    session_id: req.sessionID || null,
+    tutorial_title: tutorial.title,
+    brand_name: brandName,
+  });
+  if (insertError) throw new Error(`Failed to record tutorial view: ${insertError.message}`);
+
+  res.status(201).json({ ok: true });
+}));
+
 // --- Admin: create tutorial (metadata only; file uploads use dedicated endpoints) ---
 router.post('/', requireAuth, asyncHandler(async (req, res) => {
   const payload = normalizePayload(req.body);

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { tutorials as tutorialsApi, brandAccess, auth } from '../lib/api';
 
@@ -17,6 +17,7 @@ export default function GalleryPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [active, setActive] = useState(null);
+  const viewLoggedRef = useRef(false);
 
   const [brand, setBrand] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -103,6 +104,22 @@ export default function GalleryPage() {
       return () => window.removeEventListener('keydown', onKey);
     }
   }, [active]);
+
+  // Reset the per-open guard whenever a different video opens (or closes) so the
+  // next playback start logs exactly one view.
+  useEffect(() => {
+    viewLoggedRef.current = false;
+  }, [active]);
+
+  function handlePlay() {
+    if (!active || viewLoggedRef.current) return;
+    viewLoggedRef.current = true;
+    // A logging hiccup must never interrupt playback, so failures are reported
+    // to the console only rather than surfaced to the viewer.
+    tutorialsApi.recordView(active.id).catch((err) => {
+      console.error('Failed to record tutorial view:', err);
+    });
+  }
 
   const groups = groupByCategory(items);
 
@@ -315,6 +332,7 @@ export default function GalleryPage() {
                 poster={active.thumbnail_url || undefined}
                 controls
                 autoPlay
+                onPlay={handlePlay}
                 style={{ display: 'block', width: '100%', maxHeight: '70vh' }}
               />
               <button

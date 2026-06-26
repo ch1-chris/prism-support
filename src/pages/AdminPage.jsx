@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth, kb } from '../lib/api';
 import AnalyticsDashboard from '../components/AnalyticsDashboard';
+import ActivityLog from '../components/ActivityLog';
 import UploadZone from '../components/UploadZone';
 import ChangelogForm from '../components/ChangelogForm';
 import KBEntryForm from '../components/KBEntryForm';
@@ -22,6 +23,7 @@ const NAV_EMBEDDED_TABS = {
 
 const TABS = [
   { id: 'dashboard', label: 'Dashboard', icon: '◈', color: '#2ED6E5' },
+  { id: 'activity', label: 'Activity Log', icon: '🕘', color: '#1ABEFF' },
   { id: 'training', label: 'Training Chat', icon: '◉', color: '#FFB700' },
   { id: 'upload', label: 'Upload', icon: '↑', color: '#1ABEFF' },
   { id: 'changelog', label: 'Changelog', icon: '△', color: '#FFAB1A' },
@@ -347,6 +349,8 @@ export default function AdminPage() {
 
         <div className="main-content">
           {activeTab === 'dashboard' && <AnalyticsDashboard />}
+
+          {activeTab === 'activity' && <ActivityLog />}
 
           {activeTab === 'training' && <AdminChat />}
 

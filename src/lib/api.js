@@ -223,6 +223,8 @@ async function directUpload(signPath, file, onProgress) {
 export const tutorials = {
   list: () => request('/api/tutorials'),
   listAdmin: () => request('/api/tutorials/admin'),
+  recordView: (id) => request(`/api/tutorials/${id}/view`, { method: 'POST' }),
+  views: (limit) => request(`/api/tutorials/views?limit=${limit || 100}`),
   create: (data) => request('/api/tutorials', { method: 'POST', body: JSON.stringify(data) }),
   update: (id, data) => request(`/api/tutorials/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   remove: (id) => request(`/api/tutorials/${id}`, { method: 'DELETE' }),
