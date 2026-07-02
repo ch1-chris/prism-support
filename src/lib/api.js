@@ -229,6 +229,9 @@ export const tutorials = {
   update: (id, data) => request(`/api/tutorials/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   remove: (id) => request(`/api/tutorials/${id}`, { method: 'DELETE' }),
   reorder: (items) => request('/api/tutorials/reorder', { method: 'POST', body: JSON.stringify({ items }) }),
+  createMagicLink: (id, brandId) =>
+    request(`/api/tutorials/${id}/share-link`, { method: 'POST', body: JSON.stringify({ brand_id: brandId }) }),
+  redeemMagicLink: (token) => request(`/api/tutorials/join/${encodeURIComponent(token)}`, { method: 'POST' }),
 
   uploadVideo: async (file, onProgress) => {
     const { url, path } = await directUpload('/api/tutorials/upload-video/sign', file, onProgress);

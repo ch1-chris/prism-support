@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { tutorials as tutorialsApi, brandAccess, auth } from '../lib/api';
 
 function groupByCategory(items) {
@@ -13,10 +13,15 @@ function groupByCategory(items) {
 }
 
 export default function GalleryPage() {
+  const { tutorialId: tutorialIdParam } = useParams();
+  const navigate = useNavigate();
+  const parsedTutorialId = tutorialIdParam ? Number.parseInt(tutorialIdParam, 10) : null;
+
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [active, setActive] = useState(null);
+  const [deepLinkError, setDeepLinkError] = useState(null);
   const viewLoggedRef = useRef(false);
 
   const [brand, setBrand] = useState(null);
@@ -61,6 +66,35 @@ export default function GalleryPage() {
     return () => { cancelled = true; };
   }, [loadTutorials]);
 
+  useEffect(() => {
+    if (!parsedTutorialId || !Number.isInteger(parsedTutorialId)) {
+      setDeepLinkError(null);
+      return;
+    }
+    if (checking || loading) return;
+    if (!brand && !isAdmin) return;
+
+    const match = items.find((t) => t.id === parsedTutorialId);
+    if (match) {
+      setActive(match);
+      setDeepLinkError(null);
+    } else {
+      setActive(null);
+      setDeepLinkError('This video isn\'t available.');
+    }
+  }, [parsedTutorialId, items, loading, checking, brand, isAdmin]);
+
+  function openTutorial(t) {
+    setActive(t);
+    setDeepLinkError(null);
+    navigate(`/gallery/${t.id}`);
+  }
+
+  const closeTutorial = useCallback(() => {
+    setActive(null);
+    if (parsedTutorialId) navigate('/gallery', { replace: true });
+  }, [parsedTutorialId, navigate]);
+
   async function handleRedeem(e) {
     e.preventDefault();
     const code = codeInput.trim();
@@ -97,13 +131,13 @@ export default function GalleryPage() {
 
   useEffect(() => {
     function onKey(e) {
-      if (e.key === 'Escape') setActive(null);
+      if (e.key === 'Escape') closeTutorial();
     }
     if (active) {
       window.addEventListener('keydown', onKey);
       return () => window.removeEventListener('keydown', onKey);
     }
-  }, [active]);
+  }, [active, closeTutorial]);
 
   // Reset the per-open guard whenever a different video opens (or closes) so the
   // next playback start logs exactly one view.
@@ -202,6 +236,10 @@ export default function GalleryPage() {
             <div className="error-banner">{error}</div>
           )}
 
+          {deepLinkError && (
+            <div className="error-banner">{deepLinkError}</div>
+          )}
+
           {!loading && !error && items.length === 0 && (
             <div className="empty-state">
               <p>No tutorials available yet.</p>
@@ -226,7 +264,7 @@ export default function GalleryPage() {
                   <button
                     key={t.id}
                     className="media-card"
-                    onClick={() => setActive(t)}
+                    onClick={() => openTutorial(t)}
                     style={{
                       textAlign: 'left',
                       cursor: 'pointer',
@@ -302,7 +340,7 @@ export default function GalleryPage() {
         <div
           role="dialog"
           aria-modal="true"
-          onClick={() => setActive(null)}
+          onClick={closeTutorial}
           style={{
             position: 'fixed',
             inset: 0,
@@ -336,7 +374,7 @@ export default function GalleryPage() {
                 style={{ display: 'block', width: '100%', maxHeight: '70vh' }}
               />
               <button
-                onClick={() => setActive(null)}
+                onClick={closeTutorial}
                 aria-label="Close"
                 style={{
                   position: 'absolute',

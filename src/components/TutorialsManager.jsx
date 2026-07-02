@@ -31,6 +31,9 @@ export default function TutorialsManager() {
   const [videoProgress, setVideoProgress] = useState(null);
   const [thumbProgress, setThumbProgress] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [copiedId, setCopiedId] = useState(null);
+  const [magicLinkBrandId, setMagicLinkBrandId] = useState({});
+  const [magicLinkBusyId, setMagicLinkBusyId] = useState(null);
   const videoInputRef = useRef();
   const thumbInputRef = useRef();
 
@@ -63,6 +66,45 @@ export default function TutorialsManager() {
     return item.brand_ids
       .map((id) => brandList.find((b) => b.id === id)?.name)
       .filter(Boolean);
+  }
+
+  function magicLinkBrandCandidates(item) {
+    if (!item.published) return [];
+    if (item.brand_ids?.length) return item.brand_ids;
+    if (item.is_global !== false) return brandList.map((b) => b.id);
+    return [];
+  }
+
+  async function copy(text, id) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId((c) => (c === id ? null : c)), 1500);
+    } catch {
+      alert('Copy failed — your browser blocked clipboard access.');
+    }
+  }
+
+  function copyWatchLink(item) {
+    copy(`${window.location.origin}/gallery/${item.id}`, `watch-${item.id}`);
+  }
+
+  async function copyMagicLink(item) {
+    const candidates = magicLinkBrandCandidates(item);
+    const brandId = magicLinkBrandId[item.id] ?? (candidates.length === 1 ? candidates[0] : null);
+    if (!brandId) {
+      alert('Select an account for this magic link.');
+      return;
+    }
+    setMagicLinkBusyId(item.id);
+    try {
+      const res = await tutorialsApi.createMagicLink(item.id, brandId);
+      await copy(res.url, `magic-${item.id}`);
+    } catch (err) {
+      alert(`Magic link failed: ${err.message}`);
+    } finally {
+      setMagicLinkBusyId(null);
+    }
   }
 
   function toggleBrand(id) {
@@ -538,7 +580,45 @@ export default function TutorialsManager() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: 4 }}>
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                  {magicLinkBrandCandidates(item).length > 1 && (
+                    <select
+                      value={magicLinkBrandId[item.id] ?? ''}
+                      onChange={(e) => {
+                        const val = Number.parseInt(e.target.value, 10);
+                        setMagicLinkBrandId((prev) => ({ ...prev, [item.id]: val }));
+                      }}
+                      disabled={busy || magicLinkBusyId === item.id}
+                      style={{ fontSize: 12, maxWidth: 140 }}
+                      aria-label={`Account for magic link: ${item.title}`}
+                    >
+                      <option value="">Account…</option>
+                      {magicLinkBrandCandidates(item).map((id) => {
+                        const name = brandList.find((b) => b.id === id)?.name ?? id;
+                        return <option key={id} value={id}>{name}</option>;
+                      })}
+                    </select>
+                  )}
+                  {magicLinkBrandCandidates(item).length > 0 && (
+                    <button
+                      className="btn btn-sm"
+                      onClick={() => copyMagicLink(item)}
+                      disabled={busy || magicLinkBusyId === item.id}
+                      title="One-click link for emails (does not expose the access code)"
+                    >
+                      {copiedId === `magic-${item.id}` ? 'Copied!' : magicLinkBusyId === item.id ? 'Creating…' : 'Copy magic link'}
+                    </button>
+                  )}
+                  {item.published && (
+                    <button
+                      className="btn btn-sm"
+                      onClick={() => copyWatchLink(item)}
+                      disabled={busy}
+                      title="Deep link; viewer still needs the gallery access code"
+                    >
+                      {copiedId === `watch-${item.id}` ? 'Copied!' : 'Copy watch link'}
+                    </button>
+                  )}
                   <button
                     className="btn btn-sm"
                     onClick={() => move(item, 'up')}

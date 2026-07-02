@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
+import { randomBytes } from 'crypto';
 import { supabase } from '../db.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -73,6 +75,42 @@ async function getBrandIds(tutorialId) {
   return (data || []).map((r) => r.brand_id);
 }
 
+function randomShareToken() {
+  return randomBytes(18).toString('base64url');
+}
+
+async function generateUniqueShareToken() {
+  let attempt = 0;
+  while (true) {
+    const token = randomShareToken();
+    const { data, error } = await supabase
+      .from('tutorial_share_links')
+      .select('id')
+      .eq('token', token)
+      .maybeSingle();
+    if (error) throw new Error(`Failed to check share token uniqueness: ${error.message}`);
+    if (!data) return token;
+    attempt += 1;
+    if (attempt > 10) throw new Error('Could not generate a unique share token');
+  }
+}
+
+async function isTutorialVisibleToBrand(tutorial, brandId) {
+  if (!tutorial.published) return false;
+  if (tutorial.is_global) return true;
+  const brandIds = await getBrandIds(tutorial.id);
+  return brandIds.includes(brandId);
+}
+
+const joinLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts. Please try again later.' },
+  skip: (req) => req.session?.isAdmin === true,
+});
+
 // --- Public: list published tutorials (brand-aware) ---
 // Anonymous visitors see only global tutorials. A visitor who has redeemed a
 // brand access code (session.brandId) also sees that brand's assigned videos.
@@ -145,6 +183,87 @@ router.get('/views', requireAuth, asyncHandler(async (req, res) => {
 
   if (error) throw new Error(`Failed to list tutorial views: ${error.message}`);
   res.json({ views: data || [] });
+}));
+
+// --- Public: redeem a magic link (sets brand session, returns tutorial id) ---
+router.post('/join/:token', joinLimiter, asyncHandler(async (req, res) => {
+  const token = typeof req.params.token === 'string' ? req.params.token.trim() : '';
+  if (!token) return res.status(404).json({ error: 'This link has expired or is no longer valid' });
+
+  const { data: link, error: linkError } = await supabase
+    .from('tutorial_share_links')
+    .select('id, tutorial_id, brand_id, expires_at')
+    .eq('token', token)
+    .maybeSingle();
+  if (linkError) throw new Error(`Failed to look up magic link: ${linkError.message}`);
+  if (!link) return res.status(404).json({ error: 'This link has expired or is no longer valid' });
+  if (link.expires_at && new Date(link.expires_at) < new Date()) {
+    return res.status(404).json({ error: 'This link has expired or is no longer valid' });
+  }
+
+  const { data: tutorial, error: tutorialError } = await supabase
+    .from('tutorials')
+    .select('id, published, is_global')
+    .eq('id', link.tutorial_id)
+    .maybeSingle();
+  if (tutorialError) throw new Error(`Failed to load tutorial: ${tutorialError.message}`);
+  if (!tutorial) return res.status(404).json({ error: 'This link has expired or is no longer valid' });
+
+  const visible = await isTutorialVisibleToBrand(tutorial, link.brand_id);
+  if (!visible) return res.status(404).json({ error: 'This link has expired or is no longer valid' });
+
+  const { data: brand, error: brandError } = await supabase
+    .from('brands')
+    .select('id, name')
+    .eq('id', link.brand_id)
+    .maybeSingle();
+  if (brandError) throw new Error(`Failed to load brand: ${brandError.message}`);
+  if (!brand) return res.status(404).json({ error: 'This link has expired or is no longer valid' });
+
+  req.session.brandId = brand.id;
+  res.json({ tutorialId: link.tutorial_id, brand: { id: brand.id, name: brand.name } });
+}));
+
+// --- Admin: create a magic link for a tutorial + brand ---
+router.post('/:id/share-link', requireAuth, asyncHandler(async (req, res) => {
+  const id = Number.parseInt(req.params.id, 10);
+  if (!Number.isInteger(id)) throw new Error('Invalid tutorial id');
+
+  const brandId = Number.parseInt(req.body?.brand_id, 10);
+  if (!Number.isInteger(brandId)) throw new Error('brand_id is required');
+
+  const { data: tutorial, error: tutorialError } = await supabase
+    .from('tutorials')
+    .select('id, published, is_global')
+    .eq('id', id)
+    .maybeSingle();
+  if (tutorialError) throw new Error(`Failed to load tutorial: ${tutorialError.message}`);
+  if (!tutorial) throw new Error('Tutorial not found');
+  if (!tutorial.published) throw new Error('Only published tutorials can have magic links');
+
+  const assignedBrandIds = await getBrandIds(id);
+  if (assignedBrandIds.length && !assignedBrandIds.includes(brandId)) {
+    throw new Error('That account is not assigned to this tutorial');
+  }
+
+  const { data: brand, error: brandError } = await supabase
+    .from('brands')
+    .select('id')
+    .eq('id', brandId)
+    .maybeSingle();
+  if (brandError) throw new Error(`Failed to load brand: ${brandError.message}`);
+  if (!brand) throw new Error('Account not found');
+
+  const token = await generateUniqueShareToken();
+  const { error: insertError } = await supabase.from('tutorial_share_links').insert({
+    token,
+    tutorial_id: id,
+    brand_id: brandId,
+  });
+  if (insertError) throw new Error(`Failed to create magic link: ${insertError.message}`);
+
+  const origin = process.env.PUBLIC_APP_URL || `${req.protocol}://${req.get('host')}`;
+  res.status(201).json({ url: `${origin}/gallery/join/${token}`, token });
 }));
 
 // --- Public: record a video play (activity log) ---
